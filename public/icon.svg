@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Планировщик занятий">
+  <rect width="512" height="512" rx="96" fill="#2b5fd9"/>
+  <rect x="96" y="128" width="320" height="288" rx="32" fill="#ffffff"/>
+  <rect x="96" y="128" width="320" height="64" rx="32" fill="#1b3f96"/>
+  <rect x="128" y="104" width="40" height="64" rx="16" fill="#1b3f96"/>
+  <rect x="344" y="104" width="40" height="64" rx="16" fill="#1b3f96"/>
+  <rect x="132" y="240" width="64" height="48" rx="12" fill="#9db8f2"/>
+  <rect x="224" y="240" width="64" height="48" rx="12" fill="#9db8f2"/>
+  <rect x="316" y="240" width="64" height="48" rx="12" fill="#2b5fd9"/>
+  <rect x="132" y="320" width="64" height="48" rx="12" fill="#9db8f2"/>
+  <rect x="224" y="320" width="156" height="48" rx="12" fill="#d7e2fb"/>
+</svg>
