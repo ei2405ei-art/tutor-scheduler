@@ -43,6 +43,9 @@ jobs:
 
       - name: Настройка Pages
         uses: actions/configure-pages@v5
+        with:
+          # Включает Pages сам, если они ещё не были включены в репозитории.
+          enablement: true
 
       - name: Загрузка артефактов
         uses: actions/upload-pages-artifact@v3
