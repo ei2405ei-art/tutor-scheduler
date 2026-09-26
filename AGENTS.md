@@ -31,11 +31,12 @@
 - Тесты: 103 проверки в 6 файлах (`tests/`), включая приёмочный сценарий
   `ТЗ_MVP.md` §11 и мобильные требования §9.
 - Публикация: `README.md` и workflow
-  `.github/workflows/deploy-pages.yml`; прод-base `/tutor-scheduler/`
-  задан в `vite.config.ts`.
+  `.github/workflows/deploy-pages.yml`; приложение опубликовано как
+  `https://ei2405ei-art.github.io/tutor-scheduler/`, репозиторий
+  `ei2405ei-art/tutor-scheduler`. Прод-base относительный (`./`), поэтому
+  переименование репозитория не требует правок в коде.
 - В PowerShell выполнять npm через `npm.cmd`.
-- Не выполнено: фактический деплой и скриншот-прогон этапа 6 из §13
-  (нужен доступ к репозиторию GitHub).
+- Не выполнено: скриншот-прогон этапа 6 из §13 (нужен телефон).
 - Стек, зафиксированный в `ТЗ_MVP.md` §4: браузерная PWA, HTML/JS,
   versioned `localStorage`, публикация на GitHub Pages.
 
