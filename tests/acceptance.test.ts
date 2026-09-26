@@ -311,6 +311,44 @@ describe('приёмочный сценарий', () => {
     clickByText(root, 'Неделя');
     expect(allTestId('lesson-card')).toHaveLength(0);
   });
+
+  it('шаг 17: недельный итог показывает число занятий и сумму к оплате', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    createLesson(THURSDAY, '19:30', '60');
+
+    const payable = testId('week-payable');
+    expect(payable.textContent).toContain('К оплате за неделю');
+    expect(payable.textContent).toContain('2 400 ₽');
+  });
+
+  it('шаг 18: отменённое и перенесённое занятия не входят в сумму к оплате', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+
+    allTestId('lesson-card')[0]?.click();
+    clickByText(sheet(), 'Отменить');
+
+    expect(testId('week-payable').textContent).toContain('0\u00a0₽');
+  });
+
+  it('шаг 19: при исчерпанной предоплате показан долг в рублях', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    allTestId('lesson-card')[0]?.click();
+    clickByText(sheet(), 'Проведено');
+
+    const debt = testId('week-debt');
+    expect(debt.textContent).toContain('Долг');
+    expect(debt.textContent).toContain('1\u00a0200\u00a0₽');
+  });
+
+  it('шаг 20: без долга строка долга не показывается', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+
+    expect(allTestId('week-debt')).toHaveLength(0);
+  });
 });
 
 describe('состояния интерфейса', () => {
@@ -366,6 +404,12 @@ describe('мобильные требования', () => {
     expect(css).toMatch(/\.chip\s*\{[^}]*min-width:\s*0/);
     expect(css).toMatch(/\.chip__label\s*\{[^}]*overflow-wrap:\s*anywhere/);
     expect(css).toMatch(/@media \(max-width: 359px\)[\s\S]*?\.summary__row\s*\{\s*grid-template-columns:\s*repeat\(2, 1fr\)/);
+  });
+
+  it('денежные итоги недели ужимаются на 320 px', () => {
+    expect(css).toMatch(/\.summary__row--money\s*\{[^}]*minmax\(\d+px, 1fr\)/);
+    expect(css).toMatch(/\.summary__money\s*\{[^}]*min-width:\s*0/);
+    expect(css).toMatch(/\.summary__money-value\s*\{[^}]*white-space:\s*nowrap/);
   });
 
   it('состояние занятия передаётся не только цветом', () => {

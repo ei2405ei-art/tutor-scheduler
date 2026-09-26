@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Планировщик занятий репетитора — кейс</title>
+<style>
+  :root {
+    --ink: #14181f;
+    --muted: #5b6472;
+    --line: #dfe4ec;
+    --bg: #f6f8fb;
+    --card: #ffffff;
+    --accent: #1f5fd0;
+    --accent-soft: #eaf1fd;
+    --ok: #17694a;
+    --danger: #b3261e;
+    --radius: 18px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #0f1319;
+    color: var(--ink);
+    font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  .deck { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 24px 16px 64px; }
+
+  .slide {
+    width: 1280px;
+    height: 720px;
+    flex: 0 0 auto;
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 56px 64px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .45);
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+  }
+
+  .slide__kicker { font-size: 17px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  .slide__title { font-size: 46px; line-height: 1.12; margin: 14px 0 0; font-weight: 700; letter-spacing: -.02em; }
+  .slide__lead { font-size: 23px; line-height: 1.5; color: var(--muted); margin: 18px 0 0; max-width: 60ch; }
+  .slide__body { flex: 1; display: flex; gap: 32px; margin-top: 34px; min-height: 0; }
+  .slide__foot { position: absolute; bottom: 30px; left: 64px; right: 64px; display: flex; justify-content: space-between; font-size: 15px; color: var(--muted); }
+  .slide__num { font-variant-numeric: tabular-nums; }
+
+  ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+  ul.plain li { font-size: 22px; line-height: 1.45; padding-left: 30px; position: relative; }
+  ul.plain li::before { content: ""; position: absolute; left: 0; top: 11px; width: 12px; height: 12px; border-radius: 3px; background: var(--accent); }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; min-height: 0; }
+  .cols--3 { grid-template-columns: repeat(3, 1fr); }
+
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; }
+  .card h3 { margin: 0 0 10px; font-size: 22px; }
+  .card p { margin: 0; font-size: 18px; line-height: 1.5; color: var(--muted); }
+  .card--accent { background: var(--accent-soft); border-color: #c3d7f7; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 19px; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 16px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  td b { font-weight: 650; }
+
+  .shot { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .shot img { max-height: 100%; max-width: 100%; display: block; }
+
+  .pill { display: inline-block; padding: 6px 14px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 17px; font-weight: 650; margin-right: 8px; }
+  .pill--ok { background: #e3f3ec; color: var(--ok); }
+
+  .big { font-size: 64px; font-weight: 700; letter-spacing: -.03em; }
+  .big-label { font-size: 18px; color: var(--muted); }
+
+  .cover { background: linear-gradient(140deg, #10203c 0%, #1f5fd0 62%, #3f8bf0 100%); color: #fff; justify-content: center; }
+  .cover .slide__kicker { color: #b9d2ff; }
+  .cover .slide__title { font-size: 62px; max-width: 20ch; }
+  .cover .slide__lead { color: #dbe7ff; font-size: 25px; }
+  .cover .slide__foot { color: #c8dbff; }
+
+  @media print {
+    body { background: #fff; }
+    .deck { display: block; padding: 0; gap: 0; }
+    .slide { box-shadow: none; border-radius: 0; width: 1280px; height: 720px; }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<main class="deck">
+
+<section class="slide cover">
+  <div class="slide__kicker">Кейс · мобильное веб-приложение</div>
+  <h1 class="slide__title">Планировщик занятий репетитора</h1>
+  <p class="slide__lead">Расписание занятий, переносы и учёт оплат в браузере.
+    Без сервера, без аккаунтов, работает офлайн.</p>
+  <div class="slide__foot"><span>ei2405ei-art / tutor-scheduler</span><span class="slide__num">1</span></div>
+</section>
+
+<section class="slide">
+  <div class="slide__kicker">Задача</div>
+  <h2 class="slide__title">Репетитор вёл расписание в заметках</h2>
+  <p class="slide__lead">Проблема была не в нехватке функций, а в том, что переносы
+    и договорённости жили в разных местах: чат, заметки, память.</p>
+  <div class="slide__body">
+    <div class="card">
+      <h3>Было</h3>
+      <p>Список занятий на месяц в заметках, перенос «на словах», предоплата
+        ученика — в голове. Ответ на вопрос «кто и сколько должен» приходилось
+        считать вручную.</p>
+    </div>
+    <div class="card card--accent">
+      <h3>Стало</h3>
+      <p>Одна неделя на экране, перенос в два касания, остаток предоплаты
+        и сумма к оплате пересчитываются сами.</p>
+    </div>
+  </div>
+  <div class="slide__foot"><span>Планировщик занятий репетитора</span><span class="slide__num">2</span></div>
+</section>
+
+<section class="slide">
+  <div class="slide__kicker">Границы</div>
+  <h2 class="slide__title">Что вошло в MVP</h2>
+  <div class="slide__body">
+    <ul class="plain" style="flex:1">
+      <li>Справочник учеников: имя, предмет, контакт, ставка</li>
+      <li>Занятия разовые и сериями, горизонт серии — четыре недели</li>
+      <li>Недельный вид Пн–Вс с переключением недель</li>
+      <li>Перенос, отмена, отметка «Проведено», заметка и домашнее задание</li>
+      <li>Пакетная предоплата с историей оплат</li>
+      <li>Итог недели: число занятий, сумма к оплате и долг</li>
+    </ul>
+  </div>
+  <div class="slide__foot"><span>Планировщик занятий репетитора</span><span class="slide__num">3</span></div>
+</section>
+
+<section class="slide">
+  <div class="slide__kicker">Границы</div>
+  <h2 class="slide__title">Что сознательно не вошло</h2>
+  <div class="slide__body">
+    <div class="cols">
+      <div class="card">
+        <h3>Нет входа учеников</h3>
+        <p>Ученик — запись в справочнике, а не пользователь. Нет аккаунтов,
+          ролей и авторизации.</p>
+      </div>
+      <div class="card">
+        <h3>Нет сервера</h3>
+        <p>Данные лежат в <code>localStorage</code> браузера и никуда не
+          отправляются. Нет аналитики и внешних интеграций.</p>
+      </div>
+      <div class="card">
+        <h3>Нет напоминаний</h3>
+        <p>В брифе напоминания были в результате, но не в составе MVP.
+          Решение: оставить на потом, чем писать пуш-уведомления в
+          нестабильном PWA без сервера.</p>
+      </div>
+      <div class="card">
+        <h3>Нет ИИ</h3>
+        <p>ИИ-подсказка домашнего задания помечена «по желанию» и требует
+          ключа API в открытом хранилище. Модуль оставлен выключенным.</p>
+      </div>
+    </div>
+  </div>
+  <div class="slide__foot"><span>Планировщик занятий репетитора</span><span class="slide__num">4</span></div>
+</section>
+
+<section class="slide">
+  <div class="slide__kicker">Как это выглядит</div>
+  <h2 class="slide__title">Неделя — главный экран</h2>
+  <div class="slide__body">
+    <div class="shot" style="flex:0 0 300px">
+      <img src="docs/screenshots/01-week.png" alt="Экран недели">
+    </div>
+    <ul class="plain" style="flex:1; align-content:center">
+      <li>Семь дней, один экран, без прокрутки по месяцам</li>
+      <li>Итог недели: сколько запланировано, проведено, отменено, перенесено</li>
+      <li>Сумма к оплате считается по ставке ученика</li>
+      <li>Статус виден и цветом, и подписью, и паттерном</li>
+      <li>Пустая неделя объясняет, что делать, и даёт кнопку</li>
+    </ul>
+  </div>
+  <div class="slide__foot"><span>Планировщик занятий репетитора</span><span class="slide__num">5</span></div>
+</section>
+
+<section class="slide">
+  <div class="slide__kicker">Ключевое решение</div>
+  <h2 class="slide__title">Перенос не стирает историю</h2>
+  <p class="slide__lead">Самая частая жалоба: «я перенёс и забыл, а ученик пришёл
+    в старый день». Поэтому перенос — это два занятия, а не редактирование даты.</p>
+  <div class="slide__body">
+    <div class="cols cols--3">
+      <div class="card">
+        <h3>Исходное</h3>
+        <p>Остаётся в своей ячейке недели со статусом «Перенесено» и
+          приглушённым видом.</p>
+      </div>
+      <div class="card">
+        <h3>Новое</h3>
+        <p>Создаётся в целевой дате как обычное запланированное занятие.</p>
+      </div>
+      <div class="card card--accent">
+        <h3>Связь</h3>
+        <p>Оба занятия знают друг друга: в карточке видна история переноса
+          в обе стороны.</p>
+      </div>
+    </div>
+  </div>
+  <div class="slide__foot"><span>Планировщик занятий репетитора</span><span class="slide__num">6</span></div>
+</section>
+
+<section class="slide">
+  <div class="slide__kicker">Деньги</div>
+  <h2 class="slide__title">Суммы считаются, а не хранятся</h2>
+  <p class="slide__lead">Баланс, сумма к оплате и долг — вычисляемые значения.
+    В хранилище нет денежных полей, которые можно забыть обновить.</p>
+  <div class="slide__body">
+    <table>
+      <thead><tr><th>Показатель</th><th>Формула</th><th>Пример</th></tr></thead>
+      <tbody>
+        <tr><td><b>Остаток предоплаты</b></td><td>оплачено занятий − проведено</td><td>4 − 1 = 3</td></tr>
+        <tr><td><b>К оплате за неделю</b></td><td>ставка по занятиям в статусе «запланировано» и «проведено»</td><td>3 × 1 200 ₽ = 3 600 ₽</td></tr>
+        <tr><td><b>Долг</b></td><td>остаток × ставка, если остаток отрицательный</td><td>−2 × 1 200 ₽ = 2 400 ₽</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="slide__foot"><span>Планировщик занятий репетитора</span><span class="slide__num">7</span></div>
+</section>
+
+<section class="slide">
+  <div class="slide__kicker">Устройство</div>
+  <h2 class="slide__title">Слои не пересекаются</h2>
+  <div class="slide__body">
+    <table>
+      <thead><tr><th>Слой</th><th>Что делает</th><th>Чего не знает</th></tr></thead>
+      <tbody>
+        <tr><td><b>domain/</b></td><td>даты, недели, серии, баланс, деньги, команды</td><td>про DOM и хранилище</td></tr>
+        <tr><td><b>storage/</b></td><td>версионированная схема, валидация, починка</td><td>про интерфейс</td></tr>
+        <tr><td><b>app/</b></td><td>связывает команды, хранилище и уведомления</td><td>про разметку</td></tr>
+        <tr><td><b>ui/</b></td><td>неделя, ученики, формы, карточки</td><td>про правила предметной области</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="slide__foot"><span>Планировщик занятий репетитора</span><span class="slide__num">8</span></div>
+</section>
+
+<section class="slide">
+  <div class="slide__kicker">Проверка</div>
+  <h2 class="slide__title">Правила закреплены тестами</h2>
+  <div class="slide__body">
+    <div class="cols">
+      <div>
+        <div class="big">124</div>
+        <div class="big-label">проверки в 7 файлах</div>
+        <div style="margin-top:26px">
+          <span class="pill pill--ok">lint</span>
+          <span class="pill pill--ok">typecheck</span>
+          <span class="pill pill--ok">build</span>
+        </div>
+      </div>
+      <ul class="plain" style="align-content:center">
+        <li>Нельзя создать занятие без ученика, даты и времени</li>
+        <li>Два занятия с пересечением не создаются; касание границ — можно</li>
+        <li>Повторная генерация серии не даёт дублей</li>
+        <li>Перенос в прошлое запрещён, отменённое нельзя сделать проведённым</li>
+        <li>Отметка «Проведено» списывает ровно одно занятие и один раз</li>
+        <li>Перенос и отмена не меняют баланс</li>
+        <li>Повреждённые данные не удаляются молча, а уходят в резервный слот</li>
+      </ul>
+    </div>
+  </div>
+  <div class="slide__foot"><span>Планировщик занятий репетитора</span><span class="slide__num">9</span></div>
+</section>
+
+<section class="slide">
+  <div class="slide__kicker">Что дальше</div>
+  <h2 class="slide__title">Работающий MVP, а не прототип</h2>
+  <div class="slide__body">
+    <div class="cols">
+      <div class="card">
+        <h3>Уже работает</h3>
+        <p>Опубликован на GitHub Pages, ставится на телефон как приложение,
+          открывается офлайн, вёрстка не ломается на ширине 320 px.</p>
+      </div>
+      <div class="card">
+        <h3>Логичный следующий шаг</h3>
+        <p>Напоминания о ближайшем занятии. Без них репетитор всё ещё открывает
+          приложение по памяти.</p>
+      </div>
+    </div>
+  </div>
+  <div class="slide__foot"><span>ei2405ei-art / tutor-scheduler</span><span class="slide__num">10</span></div>
+</section>
+
+</main>
+</body>
+</html>

@@ -14,7 +14,7 @@ import {
   sortLessons,
 } from '../src/domain/commands.js';
 import { canTransition, computeBalance, summarizeWeek } from '../src/domain/balance.js';
-import type { AppState, Lesson } from '../src/domain/types.js';
+import type { AppState, Lesson, Student } from '../src/domain/types.js';
 
 const TODAY = new Date(2026, 8, 24, 10, 0); // четверг 24 сентября 2026
 const ctx = createContext(TODAY);
@@ -68,6 +68,13 @@ function makeLesson(patch: Partial<Lesson> = {}): Lesson {
 
 function withLessons(...lessons: Lesson[]): AppState {
   return { ...stateWith(), lessons };
+}
+
+/** Фикстура ученика по идентификатору — без `undefined` под строгими индексами. */
+function studentById(id: string): Student {
+  const found = stateWith().students.find((s) => s.id === id);
+  if (!found) throw new Error(`Нет фикстуры ученика ${id}`);
+  return found;
 }
 
 describe('создание занятия', () => {
@@ -378,6 +385,94 @@ describe('итог недели', () => {
     expect(summary.cancelled).toBe(1);
     expect(summary.moved).toBe(1);
     expect(summary.remainingPrepaid).toBe(3);
+  });
+
+  it('сумма к оплате считает planned и done по ставке, cancelled и moved не входят', () => {
+    const state: AppState = withLessons(
+      makeLesson({ id: 'l1', date: '2026-09-21', status: 'done' }),
+      makeLesson({ id: 'l2', date: '2026-09-22', startTime: '19:00' }),
+      makeLesson({ id: 'l3', date: '2026-09-23', startTime: '20:00', status: 'cancelled' }),
+      makeLesson({ id: 'l4', date: '2026-09-24', startTime: '20:00', status: 'moved' }),
+    );
+    /* 2 × 1200 (Иван: done + planned); отменённое и перенесённое не считаются. */
+    expect(summarizeWeek(state, '2026-09-23').payableTotal).toBe(2400);
+  });
+
+  it('сумма к оплате считает ставку каждого ученика', () => {
+    const state: AppState = withLessons(
+      makeLesson({ id: 'l1', date: '2026-09-21', studentId: 's1' }),
+      makeLesson({ id: 'l2', date: '2026-09-22', studentId: 's2', startTime: '19:00' }),
+      makeLesson({ id: 'l3', date: '2026-09-23', studentId: 's2', startTime: '20:00' }),
+    );
+    /* 1200 (Иван) + 1000 + 1000 (Анна). */
+    expect(summarizeWeek(state, '2026-09-23').payableTotal).toBe(3200);
+  });
+
+  it('занятие другой недели не попадает в сумму', () => {
+    const state: AppState = withLessons(
+      makeLesson({ id: 'l1', date: '2026-09-21' }),
+      makeLesson({ id: 'l2', date: '2026-09-28', startTime: '19:00' }),
+    );
+    expect(summarizeWeek(state, '2026-09-23').payableTotal).toBe(1200);
+  });
+
+  it('перенос учитывается в неделе новой даты ровно один раз', () => {
+    const state: AppState = withLessons(
+      makeLesson({ id: 'l1', date: '2026-09-22', status: 'moved', movedToLessonId: 'l2' }),
+      makeLesson({ id: 'l2', date: '2026-09-29', startTime: '19:00' }),
+    );
+    /* Неделя переноса: только moved, денег нет. Неделя новой даты: одно planned. */
+    expect(summarizeWeek(state, '2026-09-22').payableTotal).toBe(0);
+    expect(summarizeWeek(state, '2026-09-29').payableTotal).toBe(1200);
+  });
+
+  it('долг считается в рублях по отрицательному балансу учеников недели', () => {
+    const state: AppState = withLessons(
+      makeLesson({ id: 'l1', date: '2026-09-21' }),
+      makeLesson({ id: 'l2', date: '2026-09-22', startTime: '19:00', status: 'done' }),
+      makeLesson({ id: 'l3', date: '2026-09-23', studentId: 's2', startTime: '20:00', status: 'done' }),
+    );
+    const paid = addPayment(ctx, state, { studentId: 's1', lessonsCount: 1, paidAt: '2026-09-20', comment: '' });
+    expect(paid.ok).toBe(true);
+    if (!paid.ok) return;
+
+    const summary = summarizeWeek(paid.state, '2026-09-23');
+    /* Иван: оплачено 1, проведено 1 → остаток 0. Анна: оплачено 0, проведено 1 → долг 1000. */
+    expect(summary.remainingPrepaid).toBe(-1);
+    expect(summary.debtTotal).toBe(1000);
+    /* 1200 (planned) + 1200 (done) + 1000 (done) — все три неотменённых. */
+    expect(summary.payableTotal).toBe(3400);
+  });
+
+  it('долг нулевой, когда предоплата не исчерпана', () => {
+    const state: AppState = withLessons(makeLesson({ id: 'l1', date: '2026-09-21', status: 'done' }));
+    const paid = addPayment(ctx, state, { studentId: 's1', lessonsCount: 4, paidAt: '2026-09-20', comment: '' });
+    expect(paid.ok).toBe(true);
+    if (!paid.ok) return;
+    expect(summarizeWeek(paid.state, '2026-09-23').debtTotal).toBe(0);
+  });
+
+  it('суммы округляются до целых рублей', () => {
+    const state: AppState = {
+      ...withLessons(makeLesson({ id: 'l1', date: '2026-09-21' })),
+      students: [{ ...studentById('s1'), rate: 1000.4 }, studentById('s2')],
+    };
+    expect(summarizeWeek(state, '2026-09-23').payableTotal).toBe(1000);
+  });
+
+  it('некорректная ставка не ломает расчёт', () => {
+    const state: AppState = {
+      ...withLessons(makeLesson({ id: 'l1', date: '2026-09-21' })),
+      students: [{ ...studentById('s1'), rate: Number.NaN }],
+    };
+    expect(summarizeWeek(state, '2026-09-23').payableTotal).toBe(0);
+  });
+
+  it('пустая неделя даёт нулевые суммы', () => {
+    const summary = summarizeWeek(withLessons(), '2026-09-23');
+    expect(summary.payableTotal).toBe(0);
+    expect(summary.debtTotal).toBe(0);
+    expect(summary.total).toBe(0);
   });
 });
 

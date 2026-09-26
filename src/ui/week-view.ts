@@ -2,6 +2,7 @@ import { AppStore } from '../app/store.js';
 import { computeAllBalances } from '../domain/balance.js';
 import { formatDayShort, todayIso, WEEKDAYS_SHORT, weekdayOf } from '../domain/dates.js';
 import { formatInterval } from '../domain/time.js';
+import { formatMoney } from '../domain/money.js';
 import { sortLessons } from '../domain/commands.js';
 import { STATUS_LABELS, type Lesson } from '../domain/types.js';
 import { startOfWeek, weekDates } from '../domain/week.js';
@@ -27,6 +28,20 @@ export function renderWeekView(store: AppStore, options: WeekViewOptions): HTMLE
 
   /* панель итога недели */
   const tone = summary.remainingPrepaid < 0 ? 'danger' : 'ok';
+  const moneyRow = el('div', { class: 'summary__row summary__row--money' }, [
+    el('div', { class: 'summary__money', 'data-testid': 'week-payable' }, [
+      el('span', { class: 'summary__money-label', text: 'К оплате за неделю' }),
+      el('strong', { class: 'summary__money-value', text: formatMoney(summary.payableTotal) }),
+    ]),
+  ]);
+  if (summary.debtTotal > 0) {
+    moneyRow.appendChild(
+      el('div', { class: 'summary__money summary__money--debt', 'data-testid': 'week-debt' }, [
+        el('span', { class: 'summary__money-label', text: 'Долг' }),
+        el('strong', { class: 'summary__money-value', text: formatMoney(summary.debtTotal) }),
+      ]),
+    );
+  }
   view.appendChild(
     el('section', { class: 'summary', 'data-testid': 'week-summary' }, [
       el('div', { class: 'summary__row' }, [
@@ -35,6 +50,7 @@ export function renderWeekView(store: AppStore, options: WeekViewOptions): HTMLE
         summaryChip('Отменено', summary.cancelled, 'cancelled'),
         summaryChip('Перенесено', summary.moved, 'moved'),
       ]),
+      moneyRow,
       el('div', { class: `summary__balance summary__balance--${tone}`, text:
         summary.remainingPrepaid < 0
           ? `Остаток предоплаты по неделе: долг ${Math.abs(summary.remainingPrepaid)}`

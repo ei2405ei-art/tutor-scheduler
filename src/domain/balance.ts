@@ -1,4 +1,5 @@
 import { isAfter, isIsoDate, todayIso, type IsoDate } from './dates.js';
+import { roundMoney } from './money.js';
 import { intervalsOverlap, isClockTime, isValidDuration } from './time.js';
 import { FINAL_STATUSES, type AppState, type Lesson, type LessonStatus, type Student } from './types.js';
 import { startOfWeek, endOfWeek } from './week.js';
@@ -38,6 +39,21 @@ export interface WeekSummary {
   total: number;
   /** Суммарный остаток предоплаты по ученикам, у которых есть занятия недели. */
   remainingPrepaid: number;
+  /**
+   * Сумма к оплате за неделю в рублях: `Σ rate` по занятиям недели в статусе
+   * `planned` и `done`. `cancelled` и `moved` не учитываются, поэтому перенос
+   * попадает в сумму ровно один раз — в неделе своей новой даты (ТЗ §6.5).
+   */
+  payableTotal: number;
+  /**
+   * Долг в рублях: `Σ |balance| × rate` по ученикам недели с отрицательным
+   * остатком предоплаты (ТЗ §6.5).
+   */
+  debtTotal: number;
+}
+
+function rateOf(state: AppState, studentId: string): number {
+  return state.students.find((s) => s.id === studentId)?.rate ?? 0;
 }
 
 export function summarizeWeek(state: AppState, date: IsoDate): WeekSummary {
@@ -54,6 +70,8 @@ export function summarizeWeek(state: AppState, date: IsoDate): WeekSummary {
     moved: 0,
     total: inWeek.length,
     remainingPrepaid: 0,
+    payableTotal: 0,
+    debtTotal: 0,
   };
 
   const studentIds = new Set<string>();
@@ -63,13 +81,24 @@ export function summarizeWeek(state: AppState, date: IsoDate): WeekSummary {
     if (lesson.status === 'done') summary.done += 1;
     if (lesson.status === 'cancelled') summary.cancelled += 1;
     if (lesson.status === 'moved') summary.moved += 1;
+    if (lesson.status === 'planned' || lesson.status === 'done') {
+      summary.payableTotal += rateOf(state, lesson.studentId);
+    }
   }
 
   for (const id of studentIds) {
-    summary.remainingPrepaid += computeBalance(state, id).remaining;
+    const balance = computeBalance(state, id);
+    summary.remainingPrepaid += balance.remaining;
+    if (balance.remaining < 0) {
+      summary.debtTotal += Math.abs(balance.remaining) * rateOf(state, id);
+    }
   }
 
-  return summary;
+  return {
+    ...summary,
+    payableTotal: roundMoney(summary.payableTotal),
+    debtTotal: roundMoney(summary.debtTotal),
+  };
 }
 
 /** Конечный статус: из него нельзя перейти в `done` (BR-12). */

@@ -216,6 +216,41 @@ body.has-sheet {
   color: var(--danger);
 }
 
+.summary__row--money {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  margin-top: 8px;
+  gap: 6px;
+}
+
+.summary__money {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #eef4ff;
+  color: #1b3a6b;
+}
+
+.summary__money--debt {
+  background: #fdecec;
+  color: var(--danger);
+}
+
+.summary__money-label {
+  font-size: 12px;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.summary__money-value {
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 /* ------------------------------------------------------------- неделя */
 
 .week__grid {
