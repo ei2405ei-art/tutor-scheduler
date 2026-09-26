@@ -166,6 +166,8 @@ body.has-sheet {
   display: grid;
   justify-items: center;
   gap: 2px;
+  /* min-width: 0 и перенос длинных слов не дают сетке выйти за 320 px. */
+  min-width: 0;
   padding: 8px 4px;
   border-radius: 10px;
   background: #f0f2f5;
@@ -182,6 +184,7 @@ body.has-sheet {
 .chip__label {
   font-size: 11px;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .chip--done {
@@ -804,6 +807,13 @@ body.has-sheet {
 }
 
 /* --------------------------------------------------- широкие экраны */
+
+/* На узких экранах четыре итоговых счётчика не помещаются в одну строку. */
+@media (max-width: 359px) {
+  .summary__row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
 
 @media (min-width: 760px) {
   .app {

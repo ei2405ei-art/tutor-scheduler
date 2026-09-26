@@ -360,6 +360,14 @@ describe('мобильные требования', () => {
     expect(css).not.toMatch(/^\s*width:\s*\d{3,}px/m);
   });
 
+  it('итоги недели не выходят за границы на 320 px', () => {
+    // Регрессия: сетка из четырёх счётчиков распирала экран на 10 px,
+    // потому что колонки не могли сжиматься уже содержимого подписи.
+    expect(css).toMatch(/\.chip\s*\{[^}]*min-width:\s*0/);
+    expect(css).toMatch(/\.chip__label\s*\{[^}]*overflow-wrap:\s*anywhere/);
+    expect(css).toMatch(/@media \(max-width: 359px\)[\s\S]*?\.summary__row\s*\{\s*grid-template-columns:\s*repeat\(2, 1fr\)/);
+  });
+
   it('состояние занятия передаётся не только цветом', () => {
     expect(css).toContain('.lesson--cancelled');
     expect(css).toContain('text-decoration: line-through');
