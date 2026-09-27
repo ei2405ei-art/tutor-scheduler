@@ -16,17 +16,31 @@ import {
   type SeriesInput,
 } from '../domain/commands.js';
 import { computeBalance, lessonsOfStudent } from '../domain/balance.js';
-import { formatFullDate, isAfter, weekdayOf, WEEKDAYS_SHORT } from '../domain/dates.js';
+import { formatFullDate, isAfter, todayIso, weekdayOf, WEEKDAYS_SHORT } from '../domain/dates.js';
 import { formatInterval, isClockTime, isValidDuration } from '../domain/time.js';
 import {
   LESSON_STATUSES,
   STATUS_LABELS,
   STUDENT_COLORS,
+  TIMEZONES,
+  TIMEZONE_LABELS,
+  GOAL_MAX_LENGTH,
   type Lesson,
   type StudentColor,
+  type StudentTimezone,
 } from '../domain/types.js';
 import { moveHistory } from '../domain/commands.js';
-import { button, closeSheet, errorBox, field, openSheet, selectField, setError, textareaField } from './controls.js';
+import {
+  button,
+  checkboxField,
+  closeSheet,
+  errorBox,
+  field,
+  openSheet,
+  selectField,
+  setError,
+  textareaField,
+} from './controls.js';
 import { el } from './dom.js';
 
 const COLOR_LABELS: Record<StudentColor, string> = {
@@ -64,6 +78,9 @@ export function openLessonSheet(store: AppStore, lessonId: string): void {
         el('div', { class: 'sheet__meta-line', text: formatFullDate(lesson.date) }),
         el('div', { class: 'sheet__meta-line', text: formatInterval(lesson.startTime, lesson.durationMin) }),
         el('div', { class: `status status--${lesson.status}`, text: STATUS_LABELS[lesson.status] }),
+        lesson.isTrial
+          ? el('div', { class: 'sheet__meta-line', text: 'Пробное занятие: бесплатно, предоплату не списывает.' })
+          : el('span'),
       ]),
     );
 
@@ -210,7 +227,16 @@ export function openMoveSheet(store: AppStore, lesson: Lesson): void {
 
 /* --------------------------------------------------- создание занятия */
 
-export function openNewLessonSheet(store: AppStore, defaultDate: string): void {
+export interface NewLessonOptions {
+  studentId?: string;
+  mode?: 'one' | 'series';
+}
+
+export function openNewLessonSheet(
+  store: AppStore,
+  defaultDate: string,
+  options: NewLessonOptions = {},
+): void {
   const state = store.getState();
   if (state.students.length === 0) {
     openSheet({ title: 'Новое занятие', testId: 'new-lesson-sheet' }, (body) => {
@@ -220,14 +246,29 @@ export function openNewLessonSheet(store: AppStore, defaultDate: string): void {
     return;
   }
 
-  openSheet({ title: 'Новое занятие', testId: 'new-lesson-sheet' }, (body, close) => {
+  const startInSeries = options.mode === 'series';
+  const title = startInSeries ? 'Серия занятий' : 'Новое занятие';
+
+  openSheet({ title, testId: 'new-lesson-sheet' }, (body, close) => {
     const error = errorBox();
     const mode = el('div', { class: 'segmented', role: 'radiogroup', 'aria-label': 'Тип занятия' });
 
     const oneOff = el('div', { class: 'segmented__item' });
     const seriesBox = el('div', { class: 'segmented__item' });
-    const oneOffInput = el('input', { type: 'radio', name: 'mode', id: 'mode-one', value: 'one', checked: true });
-    const seriesInput = el('input', { type: 'radio', name: 'mode', id: 'mode-series', value: 'series' });
+    const oneOffInput = el('input', {
+      type: 'radio',
+      name: 'mode',
+      id: 'mode-one',
+      value: 'one',
+      checked: !startInSeries,
+    });
+    const seriesInput = el('input', {
+      type: 'radio',
+      name: 'mode',
+      id: 'mode-series',
+      value: 'series',
+      checked: startInSeries,
+    });
     oneOff.appendChild(oneOffInput);
     oneOff.appendChild(el('label', { text: 'Разовое', htmlFor: 'mode-one' }));
     seriesBox.appendChild(seriesInput);
@@ -236,7 +277,8 @@ export function openNewLessonSheet(store: AppStore, defaultDate: string): void {
     mode.appendChild(seriesBox);
 
     const students = state.students.map((s) => ({ value: s.id, label: `${s.name} — ${s.subject}` }));
-    const student = selectField('Ученик', 'student', students, students[0]?.value);
+    const preselected = students.some((s) => s.value === options.studentId) ? options.studentId : undefined;
+    const student = selectField('Ученик', 'student', students, preselected ?? students[0]?.value);
     const oneDate = field({ label: 'Дата', name: 'date', type: 'date', value: defaultDate, required: true });
     const oneTime = field({ label: 'Время', name: 'startTime', type: 'time', value: '18:00', required: true });
     const oneDuration = field({
@@ -272,7 +314,17 @@ export function openNewLessonSheet(store: AppStore, defaultDate: string): void {
     const startsOn = field({ label: 'Начало серии', name: 'startsOn', type: 'date', value: defaultDate, required: true });
     const endsOn = field({ label: 'Окончание серии', name: 'endsOn', type: 'date', value: '', hint: 'Необязательно' });
 
-    const oneBlock = el('div', { class: 'form__block' }, [oneDate, oneTime, oneDuration]);
+    const oneBlock = el('div', { class: 'form__block' }, [
+      oneDate,
+      oneTime,
+      oneDuration,
+      checkboxField(
+        'Пробное занятие',
+        'isTrial',
+        false,
+        'Бесплатное: не входит в сумму к оплате и не списывает предоплату.',
+      ),
+    ]);
     const seriesBlock = el('div', { class: 'form__block form__block--hidden' }, [
       weekday,
       seriesTime,
@@ -319,6 +371,7 @@ export function openNewLessonSheet(store: AppStore, defaultDate: string): void {
                   date: (oneDate.querySelector('input') as HTMLInputElement).value,
                   startTime: (oneTime.querySelector('input') as HTMLInputElement).value,
                   durationMin: Number((oneDuration.querySelector('input') as HTMLInputElement).value),
+                  isTrial: (oneBlock.querySelector('input[type="checkbox"]') as HTMLInputElement).checked,
                 }),
               );
           if (result.ok) close();
@@ -358,13 +411,31 @@ export function openStudentSheet(store: AppStore, studentId?: string): void {
       STUDENT_COLORS.map((c) => ({ value: c, label: COLOR_LABELS[c] })),
       existing?.color ?? STUDENT_COLORS[0],
     );
+    const goal = textareaField(
+      'Цель занятий',
+      'goal',
+      existing?.goal ?? '',
+      'Необязательно. Например: подготовка к ОГЭ по математике.',
+      GOAL_MAX_LENGTH,
+    );
+    const timezone = selectField(
+      'Часовой пояс',
+      'timezone',
+      [{ value: '', label: 'Не указан' }, ...TIMEZONES.map((tz) => ({ value: tz, label: TIMEZONE_LABELS[tz] }))],
+      existing?.timezone ?? '',
+    );
 
     body.appendChild(error);
     body.appendChild(name);
     body.appendChild(subject);
     body.appendChild(contact);
     body.appendChild(rate);
+    body.appendChild(goal);
+    body.appendChild(timezone);
     body.appendChild(color);
+    body.appendChild(
+      el('p', { class: 'hint', text: 'Часовой пояс справочный: расписание считается в вашем часовом поясе.' }),
+    );
 
     body.appendChild(
       button(
@@ -375,6 +446,8 @@ export function openStudentSheet(store: AppStore, studentId?: string): void {
             subject: (subject.querySelector('input') as HTMLInputElement).value,
             contact: (contact.querySelector('input') as HTMLInputElement).value,
             rate: Number((rate.querySelector('input') as HTMLInputElement).value),
+            goal: (goal.querySelector('textarea') as HTMLTextAreaElement).value,
+            timezone: (timezone.querySelector('select') as HTMLSelectElement).value as StudentTimezone,
             color: (color.querySelector('select') as HTMLSelectElement).value as StudentColor,
           };
           const result = store.dispatch((ctx, state) =>
@@ -411,6 +484,13 @@ export function openStudentCard(store: AppStore, studentId: string): void {
           el('div', { class: 'sheet__meta-line', text: student.subject }),
           student.contact ? el('div', { class: 'sheet__meta-line', text: student.contact }) : el('span'),
           el('div', { class: 'sheet__meta-line', text: `Ставка: ${student.rate}` }),
+          student.goal ? el('div', { class: 'sheet__meta-line', text: `Цель: ${student.goal}` }) : el('span'),
+          student.timezone
+            ? el('div', {
+                class: 'sheet__meta-line',
+                text: `Часовой пояс: ${TIMEZONE_LABELS[student.timezone]}`,
+              })
+            : el('span'),
         ]),
       );
 
@@ -450,7 +530,7 @@ export function openStudentCard(store: AppStore, studentId: string): void {
       const seriesList = state.series.filter((s) => s.studentId === student.id);
       body.appendChild(el('h3', { class: 'sheet__subtitle', text: 'Серии' }));
       if (seriesList.length === 0) {
-        body.appendChild(el('p', { class: 'hint', text: 'Регулярных занятий нет. Создайте серию из «Новое занятие».' }));
+        body.appendChild(el('p', { class: 'hint', text: 'Регулярных занятий нет.' }));
       } else {
         for (const series of seriesList) {
           const count = state.lessons.filter((l) => l.seriesId === series.id).length;
@@ -476,6 +556,15 @@ export function openStudentCard(store: AppStore, studentId: string): void {
           );
         }
       }
+      body.appendChild(
+        el('div', { class: 'sheet__actions' }, [
+          button(
+            'Создать серию',
+            () => openNewLessonSheet(store, todayIso(), { studentId: student.id, mode: 'series' }),
+            'primary',
+          ),
+        ]),
+      );
 
       /* оплаты */
       body.appendChild(el('h3', { class: 'sheet__subtitle', text: 'Оплаты' }));

@@ -1,8 +1,8 @@
 import { AppStore } from '../app/store.js';
 import { computeAllBalances, lessonsOfStudent } from '../domain/balance.js';
-import { formatFullDate } from '../domain/dates.js';
+import { formatFullDate, WEEKDAYS_SHORT } from '../domain/dates.js';
 import { formatInterval } from '../domain/time.js';
-import { STATUS_LABELS } from '../domain/types.js';
+import { STATUS_LABELS, TIMEZONE_LABELS } from '../domain/types.js';
 import { button } from './controls.js';
 import { el } from './dom.js';
 import { openStudentCard, openStudentSheet } from './sheets.js';
@@ -29,6 +29,7 @@ export function renderStudentsView(store: AppStore): HTMLElement {
     const balance = balances.get(student.id);
     const lessons = lessonsOfStudent(state, student.id);
     const last = lessons.at(-1);
+    const series = state.series.filter((s) => s.studentId === student.id && s.active);
     const tone = (balance?.remaining ?? 0) < 0 ? 'danger' : (balance?.remaining ?? 0) === 0 ? 'warn' : 'ok';
 
     const card = el('article', { class: `student student--color-${student.color}`, 'data-testid': 'student-card' }, [
@@ -40,7 +41,23 @@ export function renderStudentsView(store: AppStore): HTMLElement {
       el('div', { class: 'student__meta' }, [
         student.contact ? el('span', { text: student.contact }) : null,
         el('span', { text: `${student.rate} за занятие` }),
+        student.timezone
+          ? el('span', { class: 'student__tz', text: `Пояс: ${TIMEZONE_LABELS[student.timezone]}` })
+          : null,
       ]),
+      student.goal
+        ? el('p', { class: 'student__goal', 'data-testid': 'student-goal', text: `Цель: ${student.goal}` })
+        : null,
+      el('p', {
+        class: 'student__schedule',
+        'data-testid': 'student-schedule',
+        text:
+          series.length === 0
+            ? 'Расписание не задано'
+            : `Расписание: ${series
+                .map((s) => `${WEEKDAYS_SHORT[s.weekday - 1]} ${formatInterval(s.startTime, s.durationMin)}`)
+                .join(', ')}`,
+      }),
       el('div', { class: `balance balance--${tone}` }, [
         el('span', { text: `оплачено ${balance?.paid ?? 0}` }),
         el('span', { text: '−' }),

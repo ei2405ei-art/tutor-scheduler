@@ -1,7 +1,7 @@
 import { isAfter, isIsoDate, todayIso, type IsoDate } from './dates.js';
 import { roundMoney } from './money.js';
-import { intervalsOverlap, isClockTime, isValidDuration } from './time.js';
-import { FINAL_STATUSES, type AppState, type Lesson, type LessonStatus, type Student } from './types.js';
+import { intervalsOverlap, isClockTime, isValidDuration, toMinutes, type ClockTime } from './time.js';
+import { FINAL_STATUSES, GOAL_MAX_LENGTH, isTimezone, type AppState, type Lesson, type LessonStatus, type Student } from './types.js';
 import { startOfWeek, endOfWeek } from './week.js';
 
 export interface Balance {
@@ -17,7 +17,10 @@ export function computeBalance(state: AppState, studentId: string): Balance {
   const paid = state.payments
     .filter((p) => p.studentId === studentId)
     .reduce((sum, p) => sum + p.lessonsCount, 0);
-  const done = state.lessons.filter((l) => l.studentId === studentId && l.status === 'done').length;
+  // Пробное занятие не списывает баланс (BR-16).
+  const done = state.lessons.filter(
+    (l) => l.studentId === studentId && l.status === 'done' && !l.isTrial,
+  ).length;
   return { studentId, paid, done, remaining: paid - done };
 }
 
@@ -41,8 +44,10 @@ export interface WeekSummary {
   remainingPrepaid: number;
   /**
    * Сумма к оплате за неделю в рублях: `Σ rate` по занятиям недели в статусе
-   * `planned` и `done`. `cancelled` и `moved` не учитываются, поэтому перенос
-   * попадает в сумму ровно один раз — в неделе своей новой даты (ТЗ §6.5).
+   * `planned` и `done`, кроме пробных. `cancelled` и `moved` не учитываются,
+   * поэтому перенос попадает в сумму ровно один раз — в неделе своей новой
+   * даты. Пробные занятия в сумму не входят, но остаются в счётчиках
+   * количеств (ТЗ §6.5, BR-16).
    */
   payableTotal: number;
   /**
@@ -54,6 +59,64 @@ export interface WeekSummary {
 
 function rateOf(state: AppState, studentId: string): number {
   return state.students.find((s) => s.id === studentId)?.rate ?? 0;
+}
+
+/**
+ * Приносит ли занятие деньги: `planned` и `done`, кроме пробных (BR-16).
+ * `cancelled` и `moved` не приносят, поэтому перенос попадает в сумму
+ * ровно один раз — в неделе своей новой даты.
+ */
+export function isPayable(lesson: Lesson): boolean {
+  return (lesson.status === 'planned' || lesson.status === 'done') && !lesson.isTrial;
+}
+
+export interface DaySummary {
+  date: IsoDate;
+  /** Всего занятий дня, включая пробные и отменённые. */
+  total: number;
+  planned: number;
+  done: number;
+  cancelled: number;
+  moved: number;
+  /** Сумма к оплате за день в рублях, без пробных занятий (FR-3A.6). */
+  payableTotal: number;
+}
+
+/** Итог одного дня для дневного вида. Пробные видны в количествах, но не в сумме. */
+export function summarizeDay(state: AppState, date: IsoDate): DaySummary {
+  const lessons = state.lessons.filter((l) => l.date === date);
+  const summary: DaySummary = {
+    date,
+    total: lessons.length,
+    planned: 0,
+    done: 0,
+    cancelled: 0,
+    moved: 0,
+    payableTotal: 0,
+  };
+  for (const lesson of lessons) {
+    if (lesson.status === 'planned') summary.planned += 1;
+    if (lesson.status === 'done') summary.done += 1;
+    if (lesson.status === 'cancelled') summary.cancelled += 1;
+    if (lesson.status === 'moved') summary.moved += 1;
+    if (isPayable(lesson)) summary.payableTotal += rateOf(state, lesson.studentId);
+  }
+  return { ...summary, payableTotal: roundMoney(summary.payableTotal) };
+}
+
+/**
+ * Первое ещё не начавшееся запланированное занятие дня (FR-3A.8).
+ * Отменённые и перенесённые не считаются кандидатами.
+ */
+export function findNextLesson(lessons: Lesson[], clock: ClockTime): Lesson | null {
+  if (!isClockTime(clock)) return null;
+  const from = toMinutes(clock);
+  return (
+    lessons.find(
+      (l) =>
+        l.status === 'planned' && isClockTime(l.startTime) && toMinutes(l.startTime) >= from,
+    ) ?? null
+  );
 }
 
 export function summarizeWeek(state: AppState, date: IsoDate): WeekSummary {
@@ -81,7 +144,7 @@ export function summarizeWeek(state: AppState, date: IsoDate): WeekSummary {
     if (lesson.status === 'done') summary.done += 1;
     if (lesson.status === 'cancelled') summary.cancelled += 1;
     if (lesson.status === 'moved') summary.moved += 1;
-    if (lesson.status === 'planned' || lesson.status === 'done') {
+    if (isPayable(lesson)) {
       summary.payableTotal += rateOf(state, lesson.studentId);
     }
   }
@@ -173,12 +236,21 @@ export function validateStudentInput(input: {
   subject: string;
   contact: string;
   rate: number;
+  timezone?: string;
+  goal?: string;
 }): string | null {
   if (!input.name.trim()) return 'Укажите имя ученика.';
   if (input.name.trim().length > 80) return 'Имя слишком длинное.';
   if (!input.subject.trim()) return 'Укажите предмет.';
   if (!Number.isFinite(input.rate) || input.rate <= 0) {
     return 'Укажите ставку больше нуля.';
+  }
+  const timezone = input.timezone ?? '';
+  if (timezone !== '' && !isTimezone(timezone)) {
+    return 'Выберите часовой пояс из списка.';
+  }
+  if ((input.goal ?? '').trim().length > GOAL_MAX_LENGTH) {
+    return `Цель не длиннее ${GOAL_MAX_LENGTH} символов.`;
   }
   return null;
 }

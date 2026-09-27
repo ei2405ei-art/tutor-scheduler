@@ -26,6 +26,7 @@ export interface ElProps {
   role?: string;
   required?: boolean;
   rows?: number;
+  maxLength?: number;
   'aria-label'?: string;
   'aria-hidden'?: string;
   'aria-live'?: string;
@@ -34,9 +35,7 @@ export interface ElProps {
   'aria-expanded'?: string;
   'data-action'?: string;
   'data-id'?: string;
-  'data-date'?: string;
-  'data-status'?: string;
-  'data-testid'?: string;
+  [attribute: `data-${string}`]: string | undefined;
   tabIndex?: number;
   onchange?: (event: Event) => void;
   oninput?: (event: Event) => void;

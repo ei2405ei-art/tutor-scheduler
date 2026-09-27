@@ -12,6 +12,7 @@ export interface FieldOptions {
   inputMode?: string;
   required?: boolean;
   hint?: string;
+  maxLength?: number;
 }
 
 export function field(options: FieldOptions): HTMLLabelElement {
@@ -27,6 +28,7 @@ export function field(options: FieldOptions): HTMLLabelElement {
     step: options.step,
     inputMode: options.inputMode,
     required: options.required,
+    maxLength: options.maxLength,
   });
 
   const children: HTMLElement[] = [el('span', { class: 'field__label', text: options.label }), input];
@@ -64,13 +66,23 @@ export function textareaField(
   name: string,
   value = '',
   hint?: string,
+  maxLength?: number,
 ): HTMLLabelElement {
   const id = `f-${name}`;
-  const area = el('textarea', { id, name, rows: 3 });
+  const area = el('textarea', { id, name, rows: 3, maxLength });
   area.value = value;
   const children: HTMLElement[] = [el('span', { class: 'field__label', text: label }), area];
   if (hint) children.push(el('span', { class: 'field__hint', text: hint }));
   return el('label', { class: 'field', htmlFor: id }, children);
+}
+
+/** Флажок с подписью. Значение читается через `input.checked`. */
+export function checkboxField(label: string, name: string, checked = false, hint?: string): HTMLLabelElement {
+  const id = `f-${name}`;
+  const input = el('input', { id, name, type: 'checkbox', checked });
+  const children: HTMLElement[] = [input, el('span', { class: 'field__label', text: label })];
+  if (hint) children.push(el('span', { class: 'field__hint', text: hint }));
+  return el('label', { class: 'field field--check', htmlFor: id }, children);
 }
 
 export function button(

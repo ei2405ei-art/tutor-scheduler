@@ -10,7 +10,16 @@ import {
   todayIso,
   weekdayOf,
 } from '../src/domain/dates.js';
-import { endOfWeek, formatWeekRange, isSameWeek, startOfWeek, weekDates } from '../src/domain/week.js';
+import {
+  dayOffDate,
+  endOfWeek,
+  formatWeekRange,
+  isSameWeek,
+  isWorkWeekDay,
+  startOfWeek,
+  weekDates,
+  workWeekDates,
+} from '../src/domain/week.js';
 
 describe('календарные даты', () => {
   it('принимает только корректный формат YYYY-MM-DD', () => {
@@ -99,5 +108,41 @@ describe('неделя Пн–Вс', () => {
 
   it('короткая подпись дня', () => {
     expect(formatDayShort('2026-09-26')).toBe('26 сб');
+  });
+});
+
+describe('рабочая неделя Пн–Суб (FR-3.1)', () => {
+  it('шесть рабочих дней с понедельника по субботу', () => {
+    expect(workWeekDates('2026-09-23')).toEqual([
+      '2026-09-21',
+      '2026-09-22',
+      '2026-09-23',
+      '2026-09-24',
+      '2026-09-25',
+      '2026-09-26',
+    ]);
+  });
+
+  it('дата недели и дата воскресенья дают одну рабочую неделю', () => {
+    expect(workWeekDates('2026-09-27')).toEqual(workWeekDates('2026-09-21'));
+    expect(workWeekDates('2026-09-27').at(-1)).toBe('2026-09-26');
+  });
+
+  it('воскресенье — отдельный день недели', () => {
+    expect(dayOffDate('2026-09-21')).toBe('2026-09-27');
+    expect(dayOffDate('2026-09-24')).toBe('2026-09-27');
+    expect(dayOffDate('2026-09-27')).toBe('2026-09-27');
+  });
+
+  it('в рабочую неделю входят Пн–Сб, но не вс', () => {
+    expect(isWorkWeekDay('2026-09-21')).toBe(true);
+    expect(isWorkWeekDay('2026-09-26')).toBe(true);
+    expect(isWorkWeekDay('2026-09-27')).toBe(false);
+  });
+
+  it('воскресенье не попадает в рабочую неделю, но остаётся в границах недели', () => {
+    expect(workWeekDates('2026-09-27')).not.toContain('2026-09-27');
+    expect(weekDates('2026-09-27')).toContain('2026-09-27');
+    expect(isSameWeek('2026-09-26', '2026-09-27')).toBe(true);
   });
 });

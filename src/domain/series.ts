@@ -92,6 +92,8 @@ export function buildSeriesLessons(
       startTime: options.startTime,
       durationMin: options.durationMin,
       status: 'planned',
+      // Занятия серии не бывают пробными (FR-2.1a).
+      isTrial: false,
       topicNote: '',
       homework: '',
       seriesId: series.id,

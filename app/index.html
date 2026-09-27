@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#2b5fd9" />
+    <meta name="color-scheme" content="light" />
+    <meta name="description" content="Локальное расписание занятий репетитора: неделя, переносы, заметки и учёт предоплаты." />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <title>Планировщик занятий</title>
+  </head>
+  <body>
+    <!--
+      Точка входа для `vite dev` и `vite build`. Лежит в app/, чтобы собранная
+      страница называлась dist/index.html: от этого имени зависят манифест,
+      precache service worker и navigateFallback.
+
+      Корневой index.html — самодостаточная сборка для запуска двойным щелчком
+      из папки; её генерирует scripts/build-standalone.mjs.
+
+      Статичная заглушка видна до загрузки скрипта, а mountApp заменяет
+      содержимое #app целиком.
+    -->
+    <div id="app" class="app">
+      <div class="boot" data-testid="boot">
+        <h1 class="boot__title">Планировщик занятий</h1>
+        <p class="boot__text" data-testid="boot-text">Загружаю расписание…</p>
+        <noscript>
+          <p class="boot__text">
+            Приложению нужен JavaScript. Включите его в настройках браузера.
+          </p>
+        </noscript>
+      </div>
+    </div>
+    <script id="dev-file-notice">
+      // Этот файл открывают только через сервер разработки: он ссылается на
+      // исходники TypeScript, которые браузер выполнить не может. Готовое
+      // приложение, открываемое из папки, — index.html на уровень выше.
+      if (location.protocol === 'file:') {
+        var text = document.querySelector('[data-testid="boot-text"]');
+        if (text) {
+          text.textContent =
+            'Это файл для разработки. Готовое приложение — index.html в корне ' +
+            'папки проекта: откройте его двойным щелчком мыши.';
+        }
+      }
+    </script>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

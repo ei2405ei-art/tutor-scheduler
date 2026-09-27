@@ -313,12 +313,113 @@ describe('схема хранилища', () => {
   it('ключи и версия стабильны', () => {
     expect(STORAGE_KEY).toBe('tutor-scheduler:state');
     expect(RECOVERY_KEY).toBe('tutor-scheduler:state:recovery');
-    expect(SCHEMA_VERSION).toBe(1);
+    expect(SCHEMA_VERSION).toBe(2);
   });
 
   it('состояние версионировано', () => {
     const state: AppState = emptyAppState();
     expect(state.version).toBe(SCHEMA_VERSION);
+  });
+
+  it('данные версии 1 мигрируют: ученик получает пустые поля, занятие — isTrial', () => {
+    const legacy = {
+      version: 1,
+      students: [
+        {
+          id: 's1',
+          name: 'Иван',
+          subject: 'Математика',
+          contact: '',
+          rate: 1200,
+          color: 'blue',
+          active: true,
+          createdAt: '2026-09-01T00:00:00.000Z',
+        },
+      ],
+      series: [],
+      lessons: [
+        {
+          id: 'l1',
+          studentId: 's1',
+          date: '2026-09-24',
+          startTime: '18:00',
+          durationMin: 60,
+          status: 'planned',
+          topicNote: '',
+          homework: '',
+          seriesId: null,
+          movedToLessonId: null,
+          movedFromLessonId: null,
+          createdAt: '2026-09-20T00:00:00.000Z',
+          updatedAt: '2026-09-20T00:00:00.000Z',
+        },
+      ],
+      payments: [],
+    };
+
+    const outcome = repairState(legacy);
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+
+    expect(outcome.state.version).toBe(SCHEMA_VERSION);
+    expect(outcome.state.students[0]?.goal).toBe('');
+    expect(outcome.state.students[0]?.timezone).toBe('');
+    expect(outcome.state.lessons[0]?.isTrial).toBe(false);
+    // Данные не теряются и не требуют ручной правки.
+    expect(outcome.state.students[0]?.name).toBe('Иван');
+    expect(outcome.state.lessons).toHaveLength(1);
+  });
+
+  it('некорректные новые поля в данных версии 2 заменяются безопасными значениями', () => {
+    const raw = {
+      version: 2,
+      students: [
+        {
+          id: 's1',
+          name: 'Иван',
+          subject: 'Математика',
+          contact: '',
+          rate: 1200,
+          color: 'blue',
+          active: true,
+          createdAt: '2026-09-01T00:00:00.000Z',
+          timezone: 'Марс/Фобос',
+          goal: { unexpected: true },
+        },
+      ],
+      series: [],
+      lessons: [],
+      payments: [],
+    };
+
+    const outcome = repairState(raw);
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+    expect(outcome.state.students[0]?.timezone).toBe('');
+    expect(outcome.state.students[0]?.goal).toBe('');
+  });
+
+  it('новые поля переживают цикл сохранения и загрузки', () => {
+    const mem = new MemoryStorage();
+    const storage = new SchedulerStorage(mem);
+    const store = new AppStore(storage);
+    store.setNow(new Date(2026, 8, 24, 10, 0));
+
+    store.dispatch((ctx, state) =>
+      addStudent(ctx, state, {
+        name: 'Анна',
+        subject: 'Английский',
+        contact: '',
+        rate: 1000,
+        color: 'green',
+        goal: 'ЕГЭ',
+        timezone: 'Europe/Kaliningrad',
+      }),
+    );
+
+    const reloaded = new AppStore(new SchedulerStorage(mem));
+    expect(reloaded.getState().students[0]?.goal).toBe('ЕГЭ');
+    expect(reloaded.getState().students[0]?.timezone).toBe('Europe/Kaliningrad');
   });
 });
 

@@ -2,7 +2,10 @@ import { addDays, formatDayMonth, isIsoDate, type IsoDate, weekdayOf, WEEKDAYS_S
 
 export const WEEK_LENGTH_DAYS = 7;
 
-/** Неделя Пн–Вс (A7). */
+/** Рабочая неделя репетитора: Пн–Суб (FR-3.1). */
+export const WORK_WEEK_LENGTH_DAYS = 6;
+
+/** Неделя Пн–Вс (A7). Границы недели и расчёт денег не меняются. */
 export function startOfWeek(date: IsoDate): IsoDate {
   return addDays(date, -(weekdayOf(date) - 1));
 }
@@ -15,6 +18,25 @@ export function endOfWeek(date: IsoDate): IsoDate {
 export function weekDates(date: IsoDate): IsoDate[] {
   const start = startOfWeek(date);
   return Array.from({ length: WEEK_LENGTH_DAYS }, (_, i) => addDays(start, i));
+}
+
+/**
+ * Рабочие дни недели: понедельник — суббота.
+ * Воскресенье в сетку рабочей недели не входит (FR-3.1).
+ */
+export function workWeekDates(date: IsoDate): IsoDate[] {
+  const start = startOfWeek(date);
+  return Array.from({ length: WORK_WEEK_LENGTH_DAYS }, (_, i) => addDays(start, i));
+}
+
+/** Воскресенье той же недели — выходной день, отдельный блок (FR-3.1A). */
+export function dayOffDate(date: IsoDate): IsoDate {
+  return endOfWeek(date);
+}
+
+/** День входит в рабочую неделю Пн–Суб. */
+export function isWorkWeekDay(date: IsoDate): boolean {
+  return weekdayOf(date) <= WORK_WEEK_LENGTH_DAYS;
 }
 
 export function shiftWeek(date: IsoDate, weeks: number): IsoDate {

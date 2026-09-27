@@ -6,11 +6,13 @@ import {
   validatePaymentInput,
   validateStudentInput,
 } from './balance.js';
-import { compareIso, isBefore, todayIso, type IsoDate } from './dates.js';
+import { compareIso, formatDayMonth, isBefore, todayIso, type IsoDate } from './dates.js';
 import { buildSeriesLessons, isSeriesInputValid } from './series.js';
-import { DEFAULT_DURATION_MIN, isClockTime, isValidDuration } from './time.js';
+import { DEFAULT_DURATION_MIN, formatInterval, intervalsOverlap, isClockTime, isValidDuration } from './time.js';
 import {
   isStudentColor,
+  isTimezone,
+  SCHEMA_VERSION,
   SERIES_HORIZON_WEEKS as HORIZON,
   type AppState,
   type Lesson,
@@ -19,6 +21,7 @@ import {
   type Payment,
   type Student,
   type StudentColor,
+  type StudentTimezone,
 } from './types.js';
 
 export interface CommandContext {
@@ -43,7 +46,7 @@ function createIdFallback(): string {
   return `id-${Date.now().toString(36)}-${counter.toString(36)}`;
 }
 
-export function emptyState(version: number): AppState {
+export function emptyState(version: number = SCHEMA_VERSION): AppState {
   return { version, students: [], series: [], lessons: [], payments: [] };
 }
 
@@ -62,7 +65,21 @@ export interface StudentInput {
   subject: string;
   contact: string;
   rate: number;
+  /** Часовой пояс ученика; пустая строка или отсутствие — не задан (BR-17). */
+  timezone?: StudentTimezone | '';
+  /** Цель занятий; отсутствие — не заполнена (BR-17). */
+  goal?: string;
   color: StudentColor;
+}
+
+/** Часовой пояс из формы: пустое значение означает «не указан». */
+function inputTimezone(input: StudentInput): StudentTimezone | '' {
+  return input.timezone ?? '';
+}
+
+function invalidTimezone(input: StudentInput): boolean {
+  const value = input.timezone ?? '';
+  return value !== '' && !isTimezone(value);
 }
 
 export function addStudent(
@@ -73,6 +90,7 @@ export function addStudent(
   const error = validateStudentInput(input);
   if (error) return fail(error, state);
   if (!isStudentColor(input.color)) return fail('Выберите цвет из палитры.', state);
+  if (invalidTimezone(input)) return fail('Выберите часовой пояс из списка.', state);
 
   const student: Student = {
     id: ctx.createId(),
@@ -80,6 +98,8 @@ export function addStudent(
     subject: input.subject.trim(),
     contact: input.contact.trim(),
     rate: input.rate,
+    timezone: inputTimezone(input),
+    goal: (input.goal ?? '').trim(),
     color: input.color,
     active: true,
     createdAt: ctx.now,
@@ -98,6 +118,7 @@ export function updateStudent(
   const current = state.students.find((s) => s.id === studentId);
   if (!current) return fail('Ученик не найден.', state);
   if (!isStudentColor(input.color)) return fail('Выберите цвет из палитры.', state);
+  if (invalidTimezone(input)) return fail('Выберите часовой пояс из списка.', state);
 
   const updated: Student = {
     ...current,
@@ -105,6 +126,8 @@ export function updateStudent(
     subject: input.subject.trim(),
     contact: input.contact.trim(),
     rate: input.rate,
+    timezone: inputTimezone(input),
+    goal: (input.goal ?? '').trim(),
     color: input.color,
   };
   return ok(
@@ -137,6 +160,8 @@ export interface OneOffLessonInput {
   date: string;
   startTime: string;
   durationMin: number;
+  /** Пробное занятие: не приносит денег и не списывает баланс (BR-16). Отсутствие — обычное. */
+  isTrial?: boolean;
 }
 
 export function addOneOffLesson(
@@ -154,6 +179,7 @@ export function addOneOffLesson(
     startTime: input.startTime,
     durationMin: input.durationMin,
     status: 'planned',
+    isTrial: input.isTrial === true,
     topicNote: '',
     homework: '',
     seriesId: null,
@@ -162,7 +188,11 @@ export function addOneOffLesson(
     createdAt: ctx.now,
     updatedAt: ctx.now,
   };
-  return ok({ ...state, lessons: [...state.lessons, lesson] }, lesson, 'Занятие создано.');
+  return ok(
+    { ...state, lessons: [...state.lessons, lesson] },
+    lesson,
+    `Занятие создано: ${formatDayMonth(input.date)}, ${input.startTime}.`,
+  );
 }
 
 /* -------------------------------------------------------------------- серии */
@@ -174,6 +204,25 @@ export interface SeriesInput {
   durationMin: number;
   startsOn: string;
   endsOn?: string;
+}
+
+/**
+ * Объяснение отказа серии: не «занято», а кто и когда занимает слот.
+ * Без этого репетитор не понимает, что менять, и считает, что время
+ * второму ученику записать нельзя.
+ */
+function seriesConflictReason(state: AppState, input: SeriesInput, conflicts: IsoDate[]): string {
+  if (conflicts.length === 0) return 'В выбранном диапазоне нет подходящих дат.';
+  const first = conflicts[0] as IsoDate;
+  const clash = state.lessons
+    .filter((l) => l.date === first && l.status !== 'cancelled' && l.status !== 'moved')
+    .find((l) => intervalsOverlap(l.startTime, l.durationMin, input.startTime, input.durationMin));
+  const who = clash
+    ? state.students.find((s) => s.id === clash.studentId)?.name ?? 'другой ученик'
+    : 'другое занятие';
+  const time = clash ? formatInterval(clash.startTime, clash.durationMin) : formatInterval(input.startTime, input.durationMin);
+  const tail = conflicts.length > 1 ? ` Занятых дат: ${conflicts.length}.` : '';
+  return `Занято: ${formatDayMonth(first)}, ${time} у ученика ${who}.${tail} Выберите другое время или день недели.`;
 }
 
 export function addSeries(
@@ -210,10 +259,7 @@ export function addSeries(
   });
 
   if (built.lessons.length === 0) {
-    const why = built.conflicts.length
-      ? 'Все даты серии заняты другими занятиями.'
-      : 'В выбранном диапазоне нет подходящих дат.';
-    return fail(why, state);
+    return fail(seriesConflictReason(state, input, built.conflicts), state);
   }
 
   const message = built.conflicts.length

@@ -1,25 +1,26 @@
 import { AppStore } from '../app/store.js';
 import { computeAllBalances } from '../domain/balance.js';
 import { formatDayShort, todayIso, WEEKDAYS_SHORT, weekdayOf } from '../domain/dates.js';
-import { formatInterval } from '../domain/time.js';
 import { formatMoney } from '../domain/money.js';
 import { sortLessons } from '../domain/commands.js';
-import { STATUS_LABELS, type Lesson } from '../domain/types.js';
-import { startOfWeek, weekDates } from '../domain/week.js';
+import { dayOffDate, shiftWeek, startOfWeek, workWeekDates } from '../domain/week.js';
 import { summarizeWeek } from '../domain/balance.js';
-import { openLessonSheet, openMoveSheet } from './sheets.js';
+import { openStudentSheet } from './sheets.js';
+import { lessonCard } from './lesson-card.js';
 import { button, openSheet } from './controls.js';
 import { el } from './dom.js';
-import { shiftWeek } from '../domain/week.js';
 
 export interface WeekViewOptions {
   date: string;
   onDateChange: (next: string) => void;
 }
 
+/** Выходной день репетитора: воскресенье (FR-3.1A). */
+const DAY_OFF_TITLE = 'Воскресенье';
+
 export function renderWeekView(store: AppStore, options: WeekViewOptions): HTMLElement {
   const state = store.getState();
-  const dates = weekDates(options.date);
+  const dates = workWeekDates(options.date);
   const balances = computeAllBalances(state);
   const summary = summarizeWeek(state, options.date);
   const activeStudents = new Set(state.students.filter((s) => s.active).map((s) => s.id));
@@ -59,8 +60,22 @@ export function renderWeekView(store: AppStore, options: WeekViewOptions): HTMLE
     ]),
   );
 
-  /* семь дней */
-  const grid = el('div', { class: 'week__grid' });
+  /* Первый запуск: вместо семи пустых дней объяснение и действие. */
+  if (state.students.length === 0) {
+    view.appendChild(
+      el('section', { class: 'empty-panel', 'data-testid': 'week-empty' }, [
+        el('h2', { text: 'Расписание пока пустое' }),
+        el('p', {
+          text: 'Добавьте первого ученика, а затем создайте занятие или серию занятий — здесь они появятся по дням недели.',
+        }),
+        button('Добавить ученика', () => openStudentSheet(store), 'primary'),
+      ]),
+    );
+    return view;
+  }
+
+  /* рабочая неделя: понедельник — суббота */
+  const grid = el('div', { class: 'week__grid', 'data-testid': 'week-grid' });
   for (const date of dates) {
     const weekday = weekdayOf(date);
     const lessons = sortLessons(state.lessons.filter((l) => l.date === date));
@@ -78,14 +93,50 @@ export function renderWeekView(store: AppStore, options: WeekViewOptions): HTMLE
       column.appendChild(el('p', { class: 'day__empty', text: 'Нет занятий' }));
     } else {
       for (const lesson of visible) {
-        column.appendChild(lessonCard(store, lesson, balances.get(lesson.studentId)?.remaining ?? 0));
+        column.appendChild(lessonCard(store, lesson, balances.get(lesson.studentId)?.remaining ?? 0, { compact: true }));
       }
     }
 
     grid.appendChild(column);
   }
   view.appendChild(grid);
+
+  /* воскресенье — отдельным блоком под рабочей неделей (FR-3.1A) */
+  view.appendChild(dayOffBlock(store, options.date, balances, activeStudents));
   return view;
+}
+
+/**
+ * Воскресенье вне сетки рабочей недели, но в итогах недели (FR-3.1A, FR-3.1B).
+ */
+function dayOffBlock(
+  store: AppStore,
+  date: string,
+  balances: ReturnType<typeof computeAllBalances>,
+  activeStudents: Set<string>,
+): HTMLElement {
+  const state = store.getState();
+  const sunday = dayOffDate(date);
+  const visible = sortLessons(state.lessons.filter((l) => l.date === sunday && activeStudents.has(l.studentId)));
+
+  const block = el('section', { class: 'dayoff', 'data-testid': 'week-dayoff', 'data-date': sunday }, [
+    el('header', { class: 'dayoff__head' }, [
+      el('span', { class: 'dayoff__name', text: `${DAY_OFF_TITLE} · выходной` }),
+      el('span', { class: 'dayoff__num', text: formatDayShort(sunday) }),
+    ]),
+  ]);
+
+  if (visible.length === 0) {
+    block.appendChild(el('p', { class: 'dayoff__empty', text: 'В воскресенье занятий нет' }));
+    return block;
+  }
+
+  const list = el('div', { class: 'dayoff__list' });
+  for (const lesson of visible) {
+    list.appendChild(lessonCard(store, lesson, balances.get(lesson.studentId)?.remaining ?? 0, { compact: true }));
+  }
+  block.appendChild(list);
+  return block;
 }
 
 function summaryChip(label: string, value: number, status: string): HTMLElement {
@@ -93,52 +144,6 @@ function summaryChip(label: string, value: number, status: string): HTMLElement 
     el('span', { class: 'chip__value', text: String(value) }),
     el('span', { class: 'chip__label', text: label }),
   ]);
-}
-
-function lessonCard(store: AppStore, lesson: Lesson, remaining: number): HTMLElement {
-  const state = store.getState();
-  const student = state.students.find((s) => s.id === lesson.studentId);
-  const color = student?.color ?? 'slate';
-
-  const card = el(
-    'article',
-    {
-      class: `lesson lesson--${lesson.status} lesson--color-${color}`,
-      'data-testid': 'lesson-card',
-      'data-status': lesson.status,
-      tabIndex: 0,
-      role: 'button',
-    },
-    [
-      el('span', { class: 'lesson__time', text: formatInterval(lesson.startTime, lesson.durationMin) }),
-      el('strong', { class: 'lesson__student', text: student?.name ?? 'Ученик не найден' }),
-      el('span', { class: 'lesson__subject', text: student?.subject ?? '' }),
-      el('span', { class: `lesson__status lesson__status--${lesson.status}`, text: STATUS_LABELS[lesson.status] }),
-      remaining <= 0 ? el('span', { class: 'lesson__flag', text: remaining < 0 ? 'долг' : 'предоплата исчерпана' }) : null,
-      lesson.topicNote ? el('span', { class: 'lesson__note', text: lesson.topicNote }) : null,
-      lesson.homework ? el('span', { class: 'lesson__hw', text: `ДЗ: ${lesson.homework}` }) : null,
-    ],
-  );
-
-  const open = (): void => openLessonSheet(store, lesson.id);
-  card.addEventListener('click', open);
-  card.addEventListener('keydown', (event: KeyboardEvent) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      open();
-    }
-  });
-
-  if (lesson.status === 'planned') {
-    const move = el('button', { type: 'button', class: 'lesson__quick', text: 'Перенести' });
-    move.addEventListener('click', (event: MouseEvent) => {
-      event.stopPropagation();
-      openMoveSheet(store, lesson);
-    });
-    card.appendChild(move);
-  }
-
-  return card;
 }
 
 export function weekNavigation(date: string, onChange: (next: string) => void): HTMLElement {
@@ -150,9 +155,10 @@ export function weekNavigation(date: string, onChange: (next: string) => void): 
   ]);
 }
 
+/** Заголовок показывает видимый диапазон рабочей недели: Пн–Суб. */
 function formatRangeLabel(date: string): string {
-  const dates = weekDates(date);
-  return `${formatDayShort(dates[0]!)} — ${formatDayShort(dates[6]!)}`;
+  const dates = workWeekDates(date);
+  return `${formatDayShort(dates[0]!)} — ${formatDayShort(dates[dates.length - 1]!)}`;
 }
 
 export { openSheet };

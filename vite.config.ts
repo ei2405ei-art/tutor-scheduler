@@ -1,5 +1,8 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig(({ mode }) => {
   // Локальная разработка — в корне. Прод на GitHub Pages лежит в подкаталоге
@@ -9,11 +12,22 @@ export default defineConfig(({ mode }) => {
   const base = mode === 'production' ? './' : '/';
 
   return {
+    /*
+      Точка входа — app/index.html, и она же корень vite: собранная страница
+      получает имя dist/index.html, от которого зависят манифест, precache
+      service worker и navigateFallback. Имя входного файла задаётся путём
+      относительно root, ключом в rollupOptions.input не переименовать.
+
+      Корневой index.html проекта занят самодостаточной сборкой для запуска
+      двойным щелчком из папки — её пишет scripts/build-standalone.mjs.
+    */
+    root: 'app',
+    publicDir: '../public',
     base,
     plugins: [
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg'],
+        includeAssets: [],
         manifest: {
           name: 'Планировщик занятий репетитора',
           short_name: 'Занятия',
@@ -35,7 +49,13 @@ export default defineConfig(({ mode }) => {
         },
       }),
     ],
+    build: {
+      outDir: '../dist',
+      emptyOutDir: true,
+    },
     test: {
+      // root смотрит в app/, а тесты лежат в tests/ рядом с исходниками.
+      root: projectRoot,
       environment: 'jsdom',
       include: ['tests/**/*.test.ts'],
       restoreMocks: true,

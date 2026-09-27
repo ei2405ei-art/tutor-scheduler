@@ -87,6 +87,13 @@ export class AppStore {
     return todayIso(this.now);
   }
 
+  /** Текущее время `HH:MM` в локальном часовом поясе репетитора. */
+  clock(): string {
+    const h = String(this.now.getHours()).padStart(2, '0');
+    const m = String(this.now.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
   setNow(now: Date): void {
     this.now = now;
   }

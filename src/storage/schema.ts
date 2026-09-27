@@ -1,8 +1,11 @@
 import { isIsoDate } from '../domain/dates.js';
 import { isClockTime, isValidDuration } from '../domain/time.js';
 import {
+  GOAL_MAX_LENGTH,
   isStudentColor,
+  isTimezone,
   LESSON_STATUSES,
+  SCHEMA_VERSION as APP_SCHEMA_VERSION,
   type AppState,
   type Lesson,
   type LessonSeries,
@@ -10,9 +13,49 @@ import {
   type Student,
 } from '../domain/types.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = APP_SCHEMA_VERSION;
 export const STORAGE_KEY = 'tutor-scheduler:state';
 export const RECOVERY_KEY = 'tutor-scheduler:state:recovery';
+
+type RawRecord = Record<string, unknown>;
+
+/**
+ * Реестр миграций (FR-6.3). Ключ — версия, из которой выполняется шаг.
+ * Шаги применяются по порядку от версии в хранилище до `SCHEMA_VERSION`.
+ */
+export const MIGRATIONS: Record<number, (raw: RawRecord) => RawRecord> = {
+  1: (raw) => ({
+    ...raw,
+    students: withStudentDefaults(asArray(raw.students)),
+    lessons: withLessonDefaults(asArray(raw.lessons)),
+  }),
+};
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/** Шаг 1 → 2: у учеников появились `timezone` и `goal`, у занятия — `isTrial`. */
+function withStudentDefaults(items: unknown[]): unknown[] {
+  return items.map((item) => (isObject(item) ? { timezone: '', goal: '', ...item } : item));
+}
+
+function withLessonDefaults(items: unknown[]): unknown[] {
+  return items.map((item) => (isObject(item) ? { isTrial: false, ...item } : item));
+}
+
+function migrate(version: number, raw: RawRecord): RawRecord {
+  let current = raw;
+  for (let from = version; from < SCHEMA_VERSION; from += 1) {
+    const step = MIGRATIONS[from];
+    if (step) current = step(current);
+  }
+  return current;
+}
 
 export interface RepairReport {
   /** Были ли обнаружены повреждения или несогласованности. */
@@ -27,10 +70,6 @@ export type RepairOutcome =
   | { kind: 'ok'; state: AppState; report: RepairReport }
   | { kind: 'unsupported-version'; found: unknown }
   | { kind: 'broken'; reason: string; raw: string | null };
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -87,6 +126,8 @@ function normalizeStudent(raw: Student): Student {
     subject: raw.subject,
     contact: str(raw.contact),
     rate: raw.rate,
+    timezone: isTimezone(raw.timezone) ? raw.timezone : '',
+    goal: str(raw.goal).slice(0, GOAL_MAX_LENGTH),
     color: raw.color,
     active: typeof raw.active === 'boolean' ? raw.active : true,
     createdAt: str(raw.createdAt) || new Date(0).toISOString(),
@@ -115,6 +156,7 @@ function normalizeLesson(raw: Lesson): Lesson {
     startTime: raw.startTime,
     durationMin: raw.durationMin,
     status: raw.status,
+    isTrial: typeof raw.isTrial === 'boolean' ? raw.isTrial : false,
     topicNote: str(raw.topicNote),
     homework: str(raw.homework),
     seriesId: typeof raw.seriesId === 'string' && raw.seriesId ? raw.seriesId : null,
@@ -140,10 +182,6 @@ function normalizePayment(raw: Payment): Payment {
   };
 }
 
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
 /**
  * Проверяет и чинит загруженное состояние.
  * Битые записи отбрасываются из рабочего состояния, а исходный JSON
@@ -162,10 +200,13 @@ export function repairState(parsed: unknown): RepairOutcome {
     return { kind: 'unsupported-version', found: version };
   }
 
+  // Версия из хранилища приводится к текущей до нормализации (FR-6.3).
+  const source = migrate(version, parsed);
+
   const issues: string[] = [];
   const dropped = { students: 0, series: 0, lessons: 0, payments: 0 };
 
-  const rawStudents = asArray(parsed.students);
+  const rawStudents = asArray(source.students);
   const students: Student[] = [];
   for (const raw of rawStudents) {
     if (isValidStudent(raw)) {
@@ -183,7 +224,7 @@ export function repairState(parsed: unknown): RepairOutcome {
   }
   const studentIds = new Set(students.map((s) => s.id));
 
-  const rawSeries = asArray(parsed.series);
+  const rawSeries = asArray(source.series);
   const series: LessonSeries[] = [];
   for (const raw of rawSeries) {
     if (!isValidSeries(raw)) {
@@ -206,7 +247,7 @@ export function repairState(parsed: unknown): RepairOutcome {
   }
   const seriesIds = new Set(series.map((s) => s.id));
 
-  const rawLessons = asArray(parsed.lessons);
+  const rawLessons = asArray(source.lessons);
   const lessons: Lesson[] = [];
   const seenIds = new Set<string>();
   const seenSeriesDates = new Set<string>();
@@ -256,7 +297,7 @@ export function repairState(parsed: unknown): RepairOutcome {
     }
   }
 
-  const rawPayments = asArray(parsed.payments);
+  const rawPayments = asArray(source.payments);
   const payments: Payment[] = [];
   for (const raw of rawPayments) {
     if (!isValidPayment(raw)) {

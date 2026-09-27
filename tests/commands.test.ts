@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addOneOffLesson,
   addPayment,
+  addStudent,
   cancelLesson,
   createContext,
   emptyState,
@@ -12,16 +13,29 @@ import {
   setSeriesActive,
   setStudentActive,
   sortLessons,
+  updateStudent,
 } from '../src/domain/commands.js';
-import { canTransition, computeBalance, summarizeWeek } from '../src/domain/balance.js';
-import type { AppState, Lesson, Student } from '../src/domain/types.js';
+import {
+  canTransition,
+  computeBalance,
+  findNextLesson,
+  summarizeDay,
+  summarizeWeek,
+} from '../src/domain/balance.js';
+import {
+  GOAL_MAX_LENGTH,
+  type AppState,
+  type Lesson,
+  type Student,
+  type StudentTimezone,
+} from '../src/domain/types.js';
 
 const TODAY = new Date(2026, 8, 24, 10, 0); // четверг 24 сентября 2026
 const ctx = createContext(TODAY);
 
 function stateWith(): AppState {
   return {
-    ...emptyState(1),
+    ...emptyState(),
     students: [
       {
         id: 's1',
@@ -29,6 +43,8 @@ function stateWith(): AppState {
         subject: 'Математика',
         contact: '',
         rate: 1200,
+        timezone: '',
+        goal: '',
         color: 'blue',
         active: true,
         createdAt: '2026-09-01T00:00:00.000Z',
@@ -39,6 +55,8 @@ function stateWith(): AppState {
         subject: 'Английский',
         contact: '',
         rate: 1000,
+        timezone: '',
+        goal: '',
         color: 'green',
         active: true,
         createdAt: '2026-09-01T00:00:00.000Z',
@@ -55,6 +73,7 @@ function makeLesson(patch: Partial<Lesson> = {}): Lesson {
     startTime: '18:00',
     durationMin: 60,
     status: 'planned',
+    isTrial: false,
     topicNote: '',
     homework: '',
     seriesId: null,
@@ -473,6 +492,208 @@ describe('итог недели', () => {
     expect(summary.payableTotal).toBe(0);
     expect(summary.debtTotal).toBe(0);
     expect(summary.total).toBe(0);
+  });
+});
+
+describe('пробное занятие (BR-16)', () => {
+  it('создаётся с признаком isTrial и статусом planned', () => {
+    const result = addOneOffLesson(ctx, stateWith(), {
+      studentId: 's1',
+      date: '2026-09-24',
+      startTime: '18:00',
+      durationMin: 60,
+      isTrial: true,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('planned');
+    expect(result.value.isTrial).toBe(true);
+  });
+
+  it('без признака создаётся обычное занятие', () => {
+    const result = addOneOffLesson(ctx, stateWith(), {
+      studentId: 's1',
+      date: '2026-09-24',
+      startTime: '18:00',
+      durationMin: 60,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.isTrial).toBe(false);
+  });
+
+  it('не входит в сумму к оплате, но остаётся в количествах', () => {
+    const state = withLessons(
+      makeLesson({ id: 'l1', status: 'planned', isTrial: true }),
+      makeLesson({ id: 'l2', startTime: '19:00', status: 'planned', isTrial: false }),
+    );
+    const summary = summarizeWeek(state, '2026-09-23');
+    expect(summary.total).toBe(2);
+    expect(summary.planned).toBe(2);
+    expect(summary.payableTotal).toBe(1200);
+  });
+
+  it('проведённое пробное не списывает предоплату', () => {
+    const paid = addPayment(ctx, withLessons(), {
+      studentId: 's1',
+      lessonsCount: 1,
+      paidAt: '2026-09-20',
+      comment: '',
+    });
+    expect(paid.ok).toBe(true);
+    if (!paid.ok) return;
+
+    const created = addOneOffLesson(ctx, paid.state, {
+      studentId: 's1',
+      date: '2026-09-24',
+      startTime: '18:00',
+      durationMin: 60,
+      isTrial: true,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const done = markDone(ctx, created.state, created.value.id);
+    expect(done.ok).toBe(true);
+    if (!done.ok) return;
+    expect(computeBalance(done.state, 's1').remaining).toBe(1);
+  });
+
+  it('перенос сохраняет признак пробного в новом занятии', () => {
+    const created = addOneOffLesson(ctx, stateWith(), {
+      studentId: 's1',
+      date: '2026-09-24',
+      startTime: '18:00',
+      durationMin: 60,
+      isTrial: true,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const moved = moveLesson(ctx, created.state, created.value.id, {
+      date: '2026-09-25',
+      startTime: '16:00',
+      durationMin: 60,
+    });
+    expect(moved.ok).toBe(true);
+    if (!moved.ok) return;
+
+    const target = moved.state.lessons.find((l) => l.status === 'planned');
+    expect(target?.isTrial).toBe(true);
+    expect(summarizeWeek(moved.state, '2026-09-23').payableTotal).toBe(0);
+  });
+
+  it('отмена пробного не меняет суммы', () => {
+    const created = addOneOffLesson(ctx, stateWith(), {
+      studentId: 's1',
+      date: '2026-09-24',
+      startTime: '18:00',
+      durationMin: 60,
+      isTrial: true,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const cancelled = cancelLesson(ctx, created.state, created.value.id);
+    expect(cancelled.ok).toBe(true);
+    if (!cancelled.ok) return;
+    expect(summarizeWeek(cancelled.state, '2026-09-23').payableTotal).toBe(0);
+  });
+
+  it('день и неделя считают одинаково', () => {
+    const state = withLessons(
+      makeLesson({ id: 'l1', date: '2026-09-24', status: 'planned', isTrial: true }),
+      makeLesson({ id: 'l2', date: '2026-09-24', startTime: '19:00', status: 'done', isTrial: false }),
+    );
+    const day = summarizeDay(state, '2026-09-24');
+    expect(day.total).toBe(2);
+    expect(day.done).toBe(1);
+    expect(day.planned).toBe(1);
+    expect(day.payableTotal).toBe(1200);
+    expect(summarizeWeek(state, '2026-09-23').payableTotal).toBe(day.payableTotal);
+  });
+
+  it('ближайшим считается первое ещё не начавшееся запланированное', () => {
+    const lessons = sortLessons([
+      makeLesson({ id: 'l1', startTime: '09:00', status: 'planned' }),
+      makeLesson({ id: 'l2', startTime: '18:00', status: 'planned' }),
+      makeLesson({ id: 'l3', startTime: '20:00', status: 'cancelled' }),
+      makeLesson({ id: 'l4', startTime: '21:00', status: 'done' }),
+    ]);
+    expect(findNextLesson(lessons, '10:00')?.id).toBe('l2');
+    expect(findNextLesson(lessons, '18:00')?.id).toBe('l2');
+    expect(findNextLesson(lessons, '22:00')).toBeNull();
+    expect(findNextLesson([], '10:00')).toBeNull();
+  });
+});
+
+describe('цель и часовой пояс ученика (BR-17)', () => {
+  it('сохраняются при добавлении и обновлении', () => {
+    const added = addStudent(ctx, stateWith(), {
+      name: 'Анна',
+      subject: 'Английский',
+      contact: '',
+      rate: 1000,
+      color: 'green',
+      goal: 'Подготовка к ЕГЭ',
+      timezone: 'Asia/Vladivostok',
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    expect(added.value.goal).toBe('Подготовка к ЕГЭ');
+    expect(added.value.timezone).toBe('Asia/Vladivostok');
+
+    const updated = updateStudent(ctx, added.state, added.value.id, {
+      name: 'Анна',
+      subject: 'Английский',
+      contact: '',
+      rate: 1200,
+      color: 'green',
+      goal: '',
+      timezone: '',
+    });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.value.goal).toBe('');
+    expect(updated.value.timezone).toBe('');
+  });
+
+  it('слишком длинная цель отклоняется', () => {
+    const result = addStudent(ctx, stateWith(), {
+      name: 'Анна',
+      subject: 'Английский',
+      contact: '',
+      rate: 1000,
+      color: 'green',
+      goal: 'я'.repeat(GOAL_MAX_LENGTH + 1),
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it('неизвестный часовой пояс отклоняется', () => {
+    const result = addStudent(ctx, stateWith(), {
+      name: 'Анна',
+      subject: 'Английский',
+      contact: '',
+      rate: 1000,
+      color: 'green',
+      timezone: 'Марс/Фобос' as StudentTimezone,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it('цель обрезается пробелами при сохранении', () => {
+    const result = addStudent(ctx, stateWith(), {
+      name: 'Анна',
+      subject: 'Английский',
+      contact: '',
+      rate: 1000,
+      color: 'green',
+      goal: '  ЕГЭ  ',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.goal).toBe('ЕГЭ');
   });
 });
 

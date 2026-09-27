@@ -1,6 +1,6 @@
 {
   "name": "tutor-scheduler",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Планировщик занятий репетитора — локальное PWA-приложение",
   "type": "module",
@@ -9,12 +9,14 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/build-standalone.mjs",
+    "build:standalone": "node scripts/build-standalone.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

@@ -1,43 +1,37 @@
 import { AppStore } from '../app/store.js';
 import { todayIso } from '../domain/dates.js';
-import { closeSheet, isSheetOpen } from './controls.js';
 import { el } from './dom.js';
+import { dayNavigation, renderDayView } from './day-view.js';
 import { openNewLessonSheet, openStudentSheet } from './sheets.js';
 import { renderStudentsView } from './students-view.js';
 import { renderWeekView, weekNavigation } from './week-view.js';
 
-type Tab = 'week' | 'students';
+type Tab = 'day' | 'week' | 'students';
 
 export interface UiState {
   tab: Tab;
+  /** Выбранная дата не сбрасывается при переключении вкладок (FR-1.10). */
   date: string;
 }
 
 export function mountApp(root: HTMLElement, store: AppStore, now: Date = new Date()): void {
   store.setNow(now);
-  const ui: UiState = { tab: 'week', date: todayIso(now) };
+  const ui: UiState = { tab: 'day', date: todayIso(now) };
 
   const render = (): void => {
-    if (isSheetOpen()) closeSheet();
     root.replaceChildren();
     root.className = 'app';
 
-    root.appendChild(renderHeader(ui, render));
+    root.appendChild(renderHeader(ui, store, render));
 
     const statusBanner = renderStatus(store);
     if (statusBanner) root.appendChild(statusBanner);
 
     const main = el('main', { class: 'app__main' });
-    if (ui.tab === 'week') {
-      main.appendChild(
-        renderWeekView(store, {
-          date: ui.date,
-          onDateChange: (next) => {
-            ui.date = next;
-            render();
-          },
-        }),
-      );
+    if (ui.tab === 'day') {
+      main.appendChild(renderDayView(store, viewOptions(ui, render)));
+    } else if (ui.tab === 'week') {
+      main.appendChild(renderWeekView(store, viewOptions(ui, render)));
     } else {
       main.appendChild(renderStudentsView(store));
     }
@@ -53,7 +47,7 @@ export function mountApp(root: HTMLElement, store: AppStore, now: Date = new Dat
     }
 
     root.appendChild(renderTabbar(ui, render));
-    if (ui.tab === 'week') {
+    if (ui.tab !== 'students') {
       const fab = el('button', {
         type: 'button',
         class: 'fab',
@@ -70,18 +64,29 @@ export function mountApp(root: HTMLElement, store: AppStore, now: Date = new Dat
   render();
 }
 
-function renderHeader(ui: UiState, render: () => void): HTMLElement {
+function viewOptions(ui: UiState, render: () => void): { date: string; onDateChange: (next: string) => void } {
+  return {
+    date: ui.date,
+    onDateChange: (next) => {
+      ui.date = next;
+      render();
+    },
+  };
+}
+
+function renderHeader(ui: UiState, store: AppStore, render: () => void): HTMLElement {
   const header = el('header', { class: 'app__head' }, [
     el('h1', { class: 'app__title', text: 'Планировщик занятий' }),
   ]);
 
+  if (ui.tab === 'day') {
+    header.appendChild(dayNavigation(store, viewOptions(ui, render)));
+  }
   if (ui.tab === 'week') {
-    header.appendChild(
-      weekNavigation(ui.date, (next) => {
-        ui.date = next;
-        render();
-      }),
-    );
+    header.appendChild(weekNavigation(ui.date, (next) => {
+      ui.date = next;
+      render();
+    }));
   }
 
   return header;
@@ -142,7 +147,11 @@ function renderTabbar(ui: UiState, render: () => void): HTMLElement {
     return node;
   };
 
-  return el('nav', { class: 'tabbar' }, [tab('week', 'Неделя'), tab('students', 'Ученики')]);
+  return el('nav', { class: 'tabbar' }, [
+    tab('day', 'День'),
+    tab('week', 'Неделя'),
+    tab('students', 'Ученики'),
+  ]);
 }
 
 export { openStudentSheet };

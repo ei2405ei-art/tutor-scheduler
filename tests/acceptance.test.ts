@@ -10,6 +10,7 @@ import { closeSheet } from '../src/ui/controls.js';
 
 const NOW = new Date(2026, 8, 24, 10, 0); // четверг 24 сентября 2026
 const THURSDAY = '2026-09-24';
+const SUNDAY = '2026-09-27';
 
 class MemoryStorage implements StorageLike {
   private readonly map = new Map<string, string>();
@@ -83,11 +84,36 @@ beforeEach(() => {
 });
 
 describe('приёмочный сценарий', () => {
-  it('шаг 1: приложение открывается с пустым расписанием', () => {
+  it('шаг 1: приложение открывается на вкладке «День» с пустым расписанием', () => {
     expect(text()).toContain('Планировщик занятий');
-    expect(allTestId('week-summary')).toHaveLength(1);
-    expect(text()).toContain('Нет занятий');
+    expect(allTestId('day-view')).toHaveLength(1);
+    expect(allTestId('day-navigation')).toHaveLength(1);
+    expect(allTestId('day-empty-firstrun')).toHaveLength(1);
+    expect(text()).toContain('Пока нечего показывать');
+    expect(allTestId('tab-day')).toHaveLength(1);
+    expect(allTestId('tab-week')).toHaveLength(1);
+    expect(allTestId('tab-students')).toHaveLength(1);
+    expect(allTestId('week-summary')).toHaveLength(0);
     expect(allTestId('fab')).toHaveLength(1);
+  });
+
+  it('пустое состояние дня объясняет ввод данных и открывает форму ученика', () => {
+    // Регрессия: на стартовой странице был пустой экран без объяснения,
+    // где вводить данные.
+    expect(allTestId('day-summary')).toHaveLength(0);
+
+    clickByText(testId('day-empty-firstrun'), 'Добавить ученика');
+    const form = sheet();
+    setInput(form, 'name', 'Иван');
+    setInput(form, 'subject', 'Математика');
+    setInput(form, 'rate', '1200');
+    clickByText(form, 'Добавить ученика');
+
+    expect(store.getState().students).toHaveLength(1);
+    // Ученик есть, занятий нет: день показывает итог и предложение создать занятие.
+    expect(allTestId('day-summary')).toHaveLength(1);
+    expect(allTestId('day-empty')).toHaveLength(1);
+    expect(text()).toContain('В этот день занятий нет');
   });
 
   it('шаг 2: добавляем ученика', () => {
@@ -197,6 +223,7 @@ describe('приёмочный сценарий', () => {
     expect(lessons.filter((l) => l.status === 'planned')[0]?.date).toBe('2026-09-25');
 
     // Исходная ячейка недели остаётся на месте.
+    clickByText(root, 'Неделя');
     const thursday = root.querySelector<HTMLElement>(`[data-date="${THURSDAY}"]`);
     expect(thursday?.textContent).toContain('Перенесено');
   });
@@ -290,11 +317,310 @@ describe('приёмочный сценарий', () => {
     createLesson(THURSDAY, '18:00', '60');
     expect(allTestId('lesson-card')).toHaveLength(1);
 
+    clickByText(root, 'Неделя');
+    expect(allTestId('lesson-card')).toHaveLength(1);
+
     clickByText(root, '▶');
     expect(allTestId('lesson-card')).toHaveLength(0);
 
     clickByText(root, '◀');
     expect(allTestId('lesson-card')).toHaveLength(1);
+  });
+
+  it('шаг 15a: навигация по дням показывает занятия выбранного дня', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+
+    expect(testId('day-label').textContent).toContain('24 сентября 2026');
+    expect(allTestId('lesson-card')).toHaveLength(1);
+
+    clickByText(root, '▶');
+    expect(testId('day-label').textContent).toContain('25 сентября 2026');
+    expect(allTestId('day-empty')).toHaveLength(1);
+    expect(allTestId('lesson-card')).toHaveLength(0);
+
+    clickByText(root, '◀');
+    expect(allTestId('lesson-card')).toHaveLength(1);
+  });
+
+  it('шаг 15b: выбранная дата не сбрасывается при переключении вкладок (FR-1.10)', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    clickByText(root, '▶');
+
+    clickByText(root, 'Неделя');
+    clickByText(root, 'Ученики');
+    clickByText(root, 'День');
+
+    expect(testId('day-label').textContent).toContain('25 сентября 2026');
+  });
+
+  it('шаг 15c: «Сегодня» возвращает выбранный день на сегодняшний', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    clickByText(root, '▶');
+    expect(testId('day-label').textContent).not.toContain('24 сентября 2026');
+
+    clickByText(testId('day-navigation'), 'Сегодня');
+    expect(testId('day-label').textContent).toContain('24 сентября 2026');
+    expect(allTestId('lesson-card')).toHaveLength(1);
+  });
+
+  it('шаг 15d: ближайшее занятие дня помечено подписью', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    createLesson(THURSDAY, '21:00', '60');
+
+    const cards = allTestId('lesson-card');
+    expect(cards).toHaveLength(2);
+    expect(cards[0]?.textContent).toContain('следующее');
+    expect(cards[1]?.textContent).not.toContain('следующее');
+  });
+
+  it('шаг 15e: занятия дня отсортированы по времени', () => {
+    addStudent();
+    createLesson(THURSDAY, '21:00', '60');
+    createLesson(THURSDAY, '18:00', '60');
+
+    const times = allTestId('lesson-card').map((c) => c.querySelector('.lesson__time')?.textContent ?? '');
+    expect(times[0]).toContain('18:00');
+    expect(times[1]).toContain('21:00');
+  });
+
+  it('шаг 15f: дневной итог считает количество и сумму к оплате', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    createLesson(THURSDAY, '19:30', '60');
+
+    const payable = testId('day-payable');
+    expect(payable.textContent).toContain('К оплате за день');
+    expect(payable.textContent).toContain('2 400 ₽');
+  });
+
+  it('шаг 15g: счётчик дня показывает число занятий, включая пробное', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    createTrialLesson(THURSDAY, '16:00', '60');
+
+    expect(testId('day-summary').textContent).toContain('Всего');
+    expect(allTestId('lesson-card')).toHaveLength(2);
+    // Пробное в количествах остаётся, но денег не приносит.
+    expect(testId('day-payable').textContent).toContain('1 200 ₽');
+  });
+
+  it('шаг 15h: пробное занятие подписано и не списывает баланс (BR-16)', () => {
+    addStudent();
+    createTrialLesson(THURSDAY, '18:00', '60');
+
+    const card = allTestId('lesson-card')[0];
+    expect(card?.textContent).toContain('пробное');
+    expect(card?.dataset.trial).toBe('true');
+
+    allTestId('lesson-card')[0]?.click();
+    clickByText(sheet(), 'Проведено');
+    expect(store.getState().lessons[0]?.status).toBe('done');
+    expect(testId('day-payable').textContent).toContain('0');
+
+    clickByText(root, 'Ученики');
+    allTestId('student-card')[0]?.click();
+    expect(sheet().querySelector('[data-testid="balance"]')?.textContent).toContain('осталось 0');
+  });
+
+  it('шаг 15i: цель и часовой пояс сохраняются и показываются в карточке', () => {
+    clickByText(root, 'Ученики');
+    clickByText(root, 'Добавить ученика');
+    const form = sheet();
+    setInput(form, 'name', 'Анна');
+    setInput(form, 'subject', 'Английский');
+    setInput(form, 'rate', '1000');
+    setTextarea(form, 'goal', 'Подготовка к ЕГЭ по английскому');
+    setSelect(form, 'timezone', 'Europe/Kaliningrad');
+    clickByText(form, 'Добавить ученика');
+
+    const student = store.getState().students[0];
+    expect(student?.goal).toBe('Подготовка к ЕГЭ по английскому');
+    expect(student?.timezone).toBe('Europe/Kaliningrad');
+
+    const listCard = allTestId('student-card')[0];
+    expect(listCard?.textContent).toContain('Цель: Подготовка к ЕГЭ по английскому');
+    expect(listCard?.textContent).toContain('Калининград');
+
+    allTestId('student-card')[0]?.click();
+    const card = sheet();
+    expect(card.textContent).toContain('Подготовка к ЕГЭ по английскому');
+    expect(card.textContent).toContain('Калининград');
+  });
+
+  it('шаг 15j: часовой пояс не сдвигает дату и время занятия (BR-17)', () => {
+    clickByText(root, 'Ученики');
+    clickByText(root, 'Добавить ученика');
+    const form = sheet();
+    setInput(form, 'name', 'Анна');
+    setInput(form, 'subject', 'Английский');
+    setInput(form, 'rate', '1000');
+    setSelect(form, 'timezone', 'Asia/Kamchatka');
+    clickByText(form, 'Добавить ученика');
+    clickByText(root, 'День');
+
+    testId('fab').click();
+    const lessonForm = sheet();
+    setInput(lessonForm, 'date', THURSDAY);
+    setInput(lessonForm, 'startTime', '18:00');
+    setInput(lessonForm, 'duration', '60');
+    clickByText(lessonForm, 'Создать');
+
+    const lesson = store.getState().lessons[0];
+    expect(lesson?.date).toBe(THURSDAY);
+    expect(lesson?.startTime).toBe('18:00');
+    expect(allTestId('lesson-card')[0]?.textContent).toContain('18:00');
+  });
+
+  it('шаг 15k: серия не создаёт пробных занятий', () => {
+    addStudent();
+
+    testId('fab').click();
+    const form = sheet();
+    const seriesRadio = form.querySelector<HTMLInputElement>('#mode-series');
+    if (!seriesRadio) throw new Error('Нет переключателя серии');
+    seriesRadio.checked = true;
+    seriesRadio.dispatchEvent(new Event('change', { bubbles: true }));
+
+    setInput(form, 'weekday', '4');
+    setInput(form, 'seriesTime', '18:00');
+    setInput(form, 'seriesDuration', '60');
+    setInput(form, 'startsOn', THURSDAY);
+    clickByText(form, 'Создать');
+
+    expect(store.getState().lessons.every((l) => l.isTrial === false)).toBe(true);
+  });
+
+  it('расписание создаётся из карточки ученика отдельно для каждого', () => {
+    addStudent();
+    clickByText(root, 'Ученики');
+    clickByText(root, 'Добавить ученика');
+    const second = sheet();
+    setInput(second, 'name', 'Пётр');
+    setInput(second, 'subject', 'Физика');
+    setInput(second, 'rate', '1500');
+    clickByText(second, 'Добавить ученика');
+
+    const makeSeries = (cardIndex: number, weekday: string, time: string): void => {
+      clickByText(root, 'Ученики');
+      allTestId('student-card')[cardIndex]?.click();
+      clickByText(sheet(), 'Создать серию');
+      const form = sheet();
+      expect(form.textContent).toContain('Серия занятий');
+      setInput(form, 'weekday', weekday);
+      setInput(form, 'seriesTime', time);
+      setInput(form, 'seriesDuration', '60');
+      setInput(form, 'startsOn', THURSDAY);
+      clickByText(form, 'Создать');
+    };
+
+    // Регресс: раньше серию можно было создать только из «Новое занятие»,
+    // и путь к второму ученику был неочевиден.
+    expect(allTestId('student-schedule')[0]?.textContent).toContain('Расписание не задано');
+
+    makeSeries(0, '4', '18:00');
+    makeSeries(1, '6', '10:00');
+
+    const state = store.getState();
+    expect(state.series).toHaveLength(2);
+    const anna = state.students[0];
+    const petr = state.students[1];
+    if (!anna || !petr) throw new Error('Ожидались два ученика');
+    expect(state.series.filter((s) => s.studentId === anna.id)).toHaveLength(1);
+    expect(state.series.filter((s) => s.studentId === petr.id)).toHaveLength(1);
+    expect(state.series.find((s) => s.studentId === petr.id)?.weekday).toBe(6);
+    expect(state.series.find((s) => s.studentId === petr.id)?.startTime).toBe('10:00');
+
+    clickByText(root, 'Ученики');
+    const schedules = allTestId('student-schedule').map((n) => n.textContent ?? '');
+    expect(schedules[0]).toContain('Чт 18:00');
+    expect(schedules[1]).toContain('Сб 10:00');
+
+    // Занятия серии второго ученика не смешиваются с первым.
+    const petrLessons = state.lessons.filter((l) => l.studentId === petr.id);
+    expect(petrLessons.length).toBeGreaterThan(0);
+    expect(petrLessons.every((l) => state.series.some((s) => s.id === l.seriesId))).toBe(true);
+  });
+
+  it('занятый слот не закрывает форму, а объясняет, что занять', () => {
+    addStudent();
+    clickByText(root, 'Ученики');
+    clickByText(root, 'Добавить ученика');
+    const second = sheet();
+    setInput(second, 'name', 'Пётр');
+    setInput(second, 'subject', 'Физика');
+    setInput(second, 'rate', '1000');
+    clickByText(second, 'Добавить ученика');
+
+    // Регресс: render() закрывал шторку при любой перерисовке, поэтому при
+    // отказе форма исчезала вместе с введёнными данными, а текст ошибки
+    // оставался только в исчезающем тосте. Пользователь считал, что время
+    // второму ученику записать нельзя.
+    const openSeries = (index: number): void => {
+      clickByText(root, 'Ученики');
+      allTestId('student-card')[index]?.click();
+      clickByText(sheet(), 'Создать серию');
+    };
+
+    openSeries(0);
+    setInput(sheet(), 'weekday', '4');
+    setInput(sheet(), 'seriesTime', '18:00');
+    setInput(sheet(), 'seriesDuration', '60');
+    setInput(sheet(), 'startsOn', THURSDAY);
+    clickByText(sheet(), 'Создать');
+    expect(store.getState().series).toHaveLength(1);
+
+    openSeries(1);
+    setInput(sheet(), 'weekday', '4');
+    setInput(sheet(), 'seriesTime', '18:00');
+    setInput(sheet(), 'seriesDuration', '60');
+    setInput(sheet(), 'startsOn', THURSDAY);
+    clickByText(sheet(), 'Создать');
+
+    // Форма осталась открытой, введённые значения на месте, причина понятна.
+    const form = sheet();
+    expect(form.textContent).toContain('Серия занятий');
+    expect(form.querySelector<HTMLInputElement>('[name="weekday"]')?.value).toBe('4');
+    expect(form.querySelector<HTMLInputElement>('[name="seriesTime"]')?.value).toBe('18:00');
+    const error = form.querySelector<HTMLElement>('.form__error--active');
+    expect(error?.textContent).toContain('Занято');
+    expect(error?.textContent).toContain('Иван');
+    expect(error?.textContent).toContain('другое время');
+    expect(store.getState().series).toHaveLength(1);
+
+    // После правки времени та же форма сохраняет серию второму ученику.
+    setInput(form, 'seriesTime', '19:30');
+    clickByText(form, 'Создать');
+    expect(store.getState().series).toHaveLength(2);
+    expect(store.getState().series[1]?.startTime).toBe('19:30');
+  });
+
+  it('незаполненная форма ученика не закрывается молча, а объясняет, чего не хватает', () => {
+    clickByText(root, 'Ученики');
+    clickByText(root, 'Добавить ученика');
+    const form = sheet();
+    setInput(form, 'name', 'Второй');
+
+    clickByText(form, 'Добавить ученика');
+
+    // Регресс: форма закрывалась, ученик не добавлялся, причина терялась.
+    // Пользователь делал вывод, что приложение поддерживает только одного.
+    const same = sheet();
+    expect(same.textContent).toContain('Новый ученик');
+    expect(same.querySelector<HTMLInputElement>('[name="name"]')?.value).toBe('Второй');
+    const error = same.querySelector<HTMLElement>('.form__error--active');
+    expect(error?.textContent).toContain('предмет');
+    expect(store.getState().students).toHaveLength(0);
+
+    setInput(same, 'subject', 'Математика');
+    setInput(same, 'rate', '800');
+    clickByText(same, 'Добавить ученика');
+
+    expect(store.getState().students).toHaveLength(1);
+    expect(store.getState().students[0]?.name).toBe('Второй');
   });
 
   it('шаг 16: отключённый ученик исчезает из расписания, но история остаётся', () => {
@@ -317,6 +643,7 @@ describe('приёмочный сценарий', () => {
     createLesson(THURSDAY, '18:00', '60');
     createLesson(THURSDAY, '19:30', '60');
 
+    clickByText(root, 'Неделя');
     const payable = testId('week-payable');
     expect(payable.textContent).toContain('К оплате за неделю');
     expect(payable.textContent).toContain('2 400 ₽');
@@ -328,8 +655,9 @@ describe('приёмочный сценарий', () => {
 
     allTestId('lesson-card')[0]?.click();
     clickByText(sheet(), 'Отменить');
+    clickByText(root, 'Неделя');
 
-    expect(testId('week-payable').textContent).toContain('0\u00a0₽');
+    expect(testId('week-payable').textContent).toContain('0 ₽');
   });
 
   it('шаг 19: при исчерпанной предоплате показан долг в рублях', () => {
@@ -337,6 +665,7 @@ describe('приёмочный сценарий', () => {
     createLesson(THURSDAY, '18:00', '60');
     allTestId('lesson-card')[0]?.click();
     clickByText(sheet(), 'Проведено');
+    clickByText(root, 'Неделя');
 
     const debt = testId('week-debt');
     expect(debt.textContent).toContain('Долг');
@@ -346,8 +675,91 @@ describe('приёмочный сценарий', () => {
   it('шаг 20: без долга строка долга не показывается', () => {
     addStudent();
     createLesson(THURSDAY, '18:00', '60');
+    clickByText(root, 'Неделя');
 
     expect(allTestId('week-debt')).toHaveLength(0);
+  });
+});
+
+describe('рабочая неделя репетитора Пн–Суб', () => {
+  it('шаг 21: сетка недели содержит шесть рабочих дней, воскресенья в ней нет', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    clickByText(root, 'Неделя');
+
+    const columns = [...testId('week-grid').querySelectorAll<HTMLElement>('[data-date]')];
+    expect(columns.map((c) => c.dataset.date)).toEqual([
+      '2026-09-21',
+      '2026-09-22',
+      '2026-09-23',
+      '2026-09-24',
+      '2026-09-25',
+      '2026-09-26',
+    ]);
+
+    // Воскресенье показано отдельным блоком, а не колонкой сетки.
+    const dayOff = testId('week-dayoff');
+    expect(dayOff.dataset.date).toBe('2026-09-27');
+    expect(dayOff.textContent).toContain('Воскресенье');
+    expect(dayOff.textContent).toContain('В воскресенье занятий нет');
+  });
+
+  it('шаг 22: в колонке видны время занятия и ученик', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    clickByText(root, 'Неделя');
+
+    const card = testId('week-grid').querySelector<HTMLElement>('[data-testid="lesson-card"]');
+    expect(card?.textContent).toContain('18:00');
+    expect(card?.textContent).toContain('Иван');
+    expect(card?.dataset.compact).toBe('true');
+  });
+
+  it('шаг 23: занятия воскресенья показаны отдельным блоком и входят в итог недели', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    createLesson(SUNDAY, '12:00', '60');
+    createLesson(SUNDAY, '16:00', '90');
+    clickByText(root, 'Неделя');
+
+    const dayOff = testId('week-dayoff');
+    expect(dayOff.querySelectorAll('[data-testid="lesson-card"]')).toHaveLength(2);
+    expect(dayOff.textContent).toContain('12:00');
+    expect(dayOff.textContent).toContain('16:00');
+    expect(dayOff.textContent).not.toContain('В воскресенье занятий нет');
+
+    // Итог недели считает Пн–Вс, поэтому воскресенье в сумме.
+    expect(testId('week-summary').textContent).toContain('3');
+    expect(testId('week-payable').textContent).toContain('3 600 ₽');
+  });
+
+  it('шаг 24: перенос из воскресенья оставляет исходное занятие в блоке выходного дня', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    createLesson(SUNDAY, '12:00', '60');
+    clickByText(root, 'Неделя');
+
+    testId('week-dayoff').querySelector<HTMLElement>('[data-testid="lesson-card"]')?.click();
+    clickByText(sheet(), 'Перенести');
+    const moveForm = sheet();
+    setInput(moveForm, 'moveDate', '2026-09-25');
+    setInput(moveForm, 'moveTime', '15:00');
+    setInput(moveForm, 'moveDuration', '60');
+    clickByText(moveForm, 'Перенести');
+    clickByText(root, 'Неделя');
+
+    // Исходное занятие осталось в воскресенье со статусом «перенесено».
+    const dayOff = testId('week-dayoff');
+    expect(dayOff.textContent).toContain('12:00');
+    expect(dayOff.textContent).toContain('Перенесено');
+
+    // Новое занятие появилось в пятнице, старые 12:00 там нет.
+    const friday = root.querySelector<HTMLElement>('[data-date="2026-09-25"]');
+    expect(friday?.textContent).toContain('15:00');
+    expect(friday?.textContent).not.toContain('12:00');
+
+    // В сумму к оплате перенесённое не входит: четверг и пятница.
+    expect(testId('week-payable').textContent).toContain('2 400 ₽');
   });
 });
 
@@ -416,7 +828,42 @@ describe('мобильные требования', () => {
     expect(css).toContain('.lesson--cancelled');
     expect(css).toContain('text-decoration: line-through');
   });
+
+  it('рабочая неделя: шесть колонок на широком экране и строки на узком', () => {
+    expect(css).toMatch(/@media \(min-width: 760px\)[\s\S]*?\.week__grid\s*\{[^}]*repeat\(6, minmax\(0, 1fr\)\)/);
+    expect(css).not.toMatch(/repeat\(7, minmax\(0, 1fr\)\)/);
+  });
+
+  it('блок воскресенья не ломает вёрстку на 320 px', () => {
+    expect(css).toMatch(/\.dayoff\s*\{[^}]*border: 1px dashed/);
+    expect(css).toMatch(/\.dayoff__list\s*\{[^}]*display: grid/);
+    expect(css).toMatch(/\.dayoff__name\s*\{[^}]*min-width:\s*0|overflow-wrap/);
+  });
 });
+
+function setTextarea(scope: ParentNode, name: string, value: string): void {
+  const area = scope.querySelector<HTMLTextAreaElement>(`[name="${name}"]`);
+  if (!area) throw new Error(`Не найдено поле ${name}`);
+  area.value = value;
+  area.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function setSelect(scope: ParentNode, name: string, value: string): void {
+  const select = scope.querySelector<HTMLSelectElement>(`[name="${name}"]`);
+  if (!select) throw new Error(`Не найден список ${name}`);
+  if (![...select.options].some((o) => o.value === value)) {
+    throw new Error(`В списке ${name} нет значения ${value}`);
+  }
+  select.value = value;
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function setTrial(scope: ParentNode, checked: boolean): void {
+  const box = scope.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  if (!box) throw new Error('Не найден флажок пробного занятия');
+  box.checked = checked;
+  box.dispatchEvent(new Event('change', { bubbles: true }));
+}
 
 /* ------------------------------------------------------------- помощники */
 
@@ -428,7 +875,7 @@ function addStudent(): void {
   setInput(form, 'subject', 'Математика');
   setInput(form, 'rate', '1200');
   clickByText(form, 'Добавить ученика');
-  clickByText(root, 'Неделя');
+  clickByText(root, 'День');
 }
 
 function createLesson(date: string, time: string, duration: string): void {
@@ -437,5 +884,15 @@ function createLesson(date: string, time: string, duration: string): void {
   setInput(form, 'date', date);
   setInput(form, 'startTime', time);
   setInput(form, 'duration', duration);
+  clickByText(form, 'Создать');
+}
+
+function createTrialLesson(date: string, time: string, duration: string): void {
+  testId('fab').click();
+  const form = sheet();
+  setInput(form, 'date', date);
+  setInput(form, 'startTime', time);
+  setInput(form, 'duration', duration);
+  setTrial(form, true);
   clickByText(form, 'Создать');
 }

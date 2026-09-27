@@ -44,6 +44,27 @@ body.has-sheet {
   padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
+/* -------------------------------------- заглушка до загрузки скрипта */
+
+.boot {
+  margin: auto;
+  padding: 24px 16px;
+  max-width: 34rem;
+  text-align: center;
+}
+
+.boot__title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.boot__text {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 /* ------------------------------------------------------------- шапка */
 
 .app__head {
@@ -74,6 +95,54 @@ body.has-sheet {
   text-align: center;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* Навигация по дням вкладки «День». */
+
+.daynav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.daynav__label {
+  display: flex;
+  flex: 1;
+  min-width: 120px;
+  flex-direction: column;
+  align-items: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.daynav__today {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.daynav__input {
+  min-height: var(--tap);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+/* Дневной вид: одна колонка, карточки во всю ширину экрана. */
+
+.day-view {
+  display: grid;
+  gap: 10px;
+}
+
+.day-view__list {
+  display: grid;
+  gap: 10px;
 }
 
 /* ------------------------------------------------------------- кнопки */
@@ -202,6 +271,17 @@ body.has-sheet {
   border-style: dashed;
 }
 
+/* Дневной итог: три показателя вместо четырёх недельных. */
+
+.summary--day .summary__row {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.chip--total {
+  background: var(--accent-soft);
+  border-color: #b9cbf0;
+}
+
 .summary__balance {
   margin-top: 8px;
   font-size: 14px;
@@ -294,6 +374,60 @@ body.has-sheet {
   font-size: 14px;
 }
 
+/* воскресенье — отдельный блок под рабочей неделей (FR-3.1A) */
+.dayoff {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted, var(--surface));
+}
+
+.dayoff__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.dayoff__name {
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: capitalize;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dayoff__num {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.dayoff__empty {
+  margin: 4px 2px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.dayoff__list {
+  display: grid;
+  gap: 8px;
+}
+
+/* компактная карточка в колонке рабочей недели (FR-3.1C) */
+.lesson--compact {
+  gap: 1px;
+  padding: 6px 8px;
+  margin-bottom: 0;
+}
+
+.lesson--compact .lesson__time {
+  font-size: 13px;
+}
+
 .lesson {
   position: relative;
   display: grid;
@@ -356,6 +490,34 @@ body.has-sheet {
   font-size: 12px;
   font-weight: 600;
   color: var(--warn);
+}
+
+/* Пробное занятие: подпись «пробное» плюс рамка, не только цвет (NFR-6, FR-3A.7). */
+
+.lesson--trial {
+  border-style: dashed;
+}
+
+.lesson__trial-flag {
+  justify-self: start;
+  padding: 1px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Ближайшее ещё не начавшееся занятие дня (FR-3A.8). */
+
+.lesson__next {
+  justify-self: start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Статус различим без зависимости только от цвета (NFR-6). */
@@ -458,6 +620,28 @@ body.has-sheet {
 .student__last {
   font-size: 13px;
   color: var(--muted);
+}
+
+.student__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.student__goal {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.student__schedule {
+  margin: 0;
+  font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .student__meta {
@@ -567,6 +751,30 @@ body.has-sheet {
 .field textarea {
   resize: vertical;
   min-height: 84px;
+}
+
+/* Флажок подписывается слева, от него — подпись и подсказка. */
+
+.field--check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 10px;
+  min-height: var(--tap);
+  margin-bottom: 10px;
+}
+
+.field--check input {
+  width: 22px;
+  min-height: 0;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.field--check .field__hint {
+  grid-column: 2;
 }
 
 .segmented {
@@ -857,7 +1065,12 @@ body.has-sheet {
   }
 
   .week__grid {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .day-view__list {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     align-items: start;
   }
 
