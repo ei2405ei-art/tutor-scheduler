@@ -117,8 +117,23 @@ const MONTHS_NOM = [
 
 export const WEEKDAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'] as const;
 
+export const WEEKDAYS_FULL = [
+  'Понедельник',
+  'Вторник',
+  'Среда',
+  'Четверг',
+  'Пятница',
+  'Суббота',
+  'Воскресенье',
+] as const;
+
 export function weekdayName(weekday: number): string {
   return WEEKDAYS_SHORT[(weekday - 1) % 7] ?? '';
+}
+
+/** Полное название дня недели для заголовка блока в неделе (FR-3.1). */
+export function weekdayFullName(weekday: number): string {
+  return WEEKDAYS_FULL[(weekday - 1) % 7] ?? '';
 }
 
 export function formatDayMonth(date: IsoDate): string {

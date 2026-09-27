@@ -11,6 +11,7 @@ import { formatFullDate } from '../src/domain/dates.js';
 /* Приёмочный сценарий из ТЗ_MVP.md §11 в jsdom. */
 
 const NOW = new Date(2026, 8, 24, 10, 0); // четверг 24 сентября 2026
+const MONDAY = '2026-09-21';
 const THURSDAY = '2026-09-24';
 const SUNDAY = '2026-09-27';
 
@@ -800,7 +801,7 @@ describe('приёмочный сценарий', () => {
 });
 
 describe('рабочая неделя репетитора Пн–Суб', () => {
-  it('шаг 21: сетка недели содержит шесть рабочих дней, воскресенья в ней нет', () => {
+  it('шаг 21: неделя содержит шесть рабочих дней, воскресенья в списке нет', () => {
     addStudent();
     createLesson(THURSDAY, '18:00', '60');
     clickByText(root, 'Неделя');
@@ -814,6 +815,14 @@ describe('рабочая неделя репетитора Пн–Суб', () =>
       '2026-09-25',
       '2026-09-26',
     ]);
+    expect(columns.map((c) => c.querySelector('.day__name')?.textContent)).toEqual([
+      'Понедельник',
+      'Вторник',
+      'Среда',
+      'Четверг',
+      'Пятница',
+      'Суббота',
+    ]);
 
     // Воскресенье показано отдельным блоком, а не колонкой сетки.
     const dayOff = testId('week-dayoff');
@@ -822,7 +831,7 @@ describe('рабочая неделя репетитора Пн–Суб', () =>
     expect(dayOff.textContent).toContain('В воскресенье занятий нет');
   });
 
-  it('шаг 22: в колонке видны время занятия и ученик', () => {
+  it('шаг 22: в блоке дня видны время, ученик и предмет', () => {
     addStudent();
     createLesson(THURSDAY, '18:00', '60');
     clickByText(root, 'Неделя');
@@ -830,7 +839,43 @@ describe('рабочая неделя репетитора Пн–Суб', () =>
     const card = testId('week-grid').querySelector<HTMLElement>('[data-testid="lesson-card"]');
     expect(card?.textContent).toContain('18:00');
     expect(card?.textContent).toContain('Иван');
+    expect(card?.textContent).toContain('Математика');
     expect(card?.dataset.compact).toBe('true');
+  });
+
+  it('неделя: в понедельнике занятия идут по времени под своим заголовком (FR-3.1)', () => {
+    addStudent('Свелана', 'Английский');
+    createLesson(MONDAY, '18:00', '60');
+    addStudent('Анжела', 'Английский');
+    createLesson(MONDAY, '19:00', '60', 'Анжела');
+    clickByText(root, 'Неделя');
+
+    const monday = testId('week-grid').querySelector<HTMLElement>('[data-date="2026-09-21"]');
+    expect(monday?.querySelector('.day__name')?.textContent).toBe('Понедельник');
+
+    const rows = [...(monday?.querySelectorAll<HTMLElement>('[data-testid="lesson-card"]') ?? [])].map(
+      (r) => r.textContent ?? '',
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain('18:00');
+    expect(rows[0]).toContain('Свелана');
+    expect(rows[0]).toContain('Английский');
+    expect(rows[1]).toContain('19:00');
+    expect(rows[1]).toContain('Анжела');
+  });
+
+  it('день: список занятий идёт раньше итога дня (FR-3.1I)', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+    clickByText(root, 'День');
+
+    const view = testId('day-view');
+    const summary = testId('day-summary');
+    const card = view.querySelector<HTMLElement>('[data-testid="lesson-card"]');
+    expect(card).not.toBeNull();
+    const order = [...view.children];
+    expect(order.indexOf(card!)).toBeLessThan(order.indexOf(summary));
+    expect(order.indexOf(summary)).toBe(order.length - 1);
   });
 
   it('шаг 23: занятия воскресенья показаны отдельным блоком и входят в итог недели', () => {
@@ -1039,9 +1084,10 @@ describe('мобильные требования', () => {
     expect(css).toContain('text-decoration: line-through');
   });
 
-  it('рабочая неделя: шесть колонок на широком экране и строки на узком', () => {
-    expect(css).toMatch(/@media \(min-width: 760px\)[\s\S]*?\.week__grid\s*\{[^}]*repeat\(6, minmax\(0, 1fr\)\)/);
+  it('неделя: блоки дней в две колонки на широком экране и строкой на узком', () => {
+    expect(css).toMatch(/@media \(min-width: 760px\)[\s\S]*?\.week__grid\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/);
     expect(css).not.toMatch(/repeat\(7, minmax\(0, 1fr\)\)/);
+    expect(css).not.toMatch(/repeat\(6, minmax\(0, 1fr\)\)/);
   });
 
   it('блок воскресенья не ломает вёрстку на 320 px', () => {
@@ -1077,20 +1123,27 @@ function setTrial(scope: ParentNode, checked: boolean): void {
 
 /* ------------------------------------------------------------- помощники */
 
-function addStudent(): void {
+function addStudent(name = 'Иван', subject = 'Математика'): void {
   clickByText(root, 'Ученики');
   clickByText(root, 'Добавить ученика');
   const form = sheet();
-  setInput(form, 'name', 'Иван');
-  setInput(form, 'subject', 'Математика');
+  setInput(form, 'name', name);
+  setInput(form, 'subject', subject);
   setInput(form, 'rate', '1200');
   clickByText(form, 'Добавить ученика');
   clickByText(root, 'День');
 }
 
-function createLesson(date: string, time: string, duration: string): void {
+function createLesson(date: string, time: string, duration: string, studentName?: string): void {
   testId('fab').click();
   const form = sheet();
+  if (studentName) {
+    const select = form.querySelector<HTMLSelectElement>('[name="student"]');
+    if (!select) throw new Error('В форме занятия нет выбора ученика');
+    const option = [...select.options].find((o) => o.textContent?.includes(studentName));
+    if (!option) throw new Error(`Нет ученика ${studentName}`);
+    setSelect(form, 'student', option.value);
+  }
   setInput(form, 'date', date);
   setInput(form, 'startTime', time);
   setInput(form, 'duration', duration);

@@ -1,6 +1,6 @@
 import { AppStore } from '../app/store.js';
 import { computeAllBalances } from '../domain/balance.js';
-import { formatDayShort, formatFullDate, todayIso, WEEKDAYS_SHORT, weekdayOf } from '../domain/dates.js';
+import { formatDayShort, formatFullDate, todayIso, weekdayFullName, weekdayOf } from '../domain/dates.js';
 import { formatMoney } from '../domain/money.js';
 import { sortLessons } from '../domain/commands.js';
 import type { AppState, Lesson } from '../domain/types.js';
@@ -75,20 +75,19 @@ export function renderWeekView(store: AppStore, options: WeekViewOptions): HTMLE
     return view;
   }
 
-  /* рабочая неделя: понедельник — суббота */
+  /* рабочая неделя: понедельник — суббота, вертикальным списком (FR-3.1) */
   const from = startOfWeek(options.date);
   const to = endOfWeek(options.date);
   const inWeek = state.lessons.filter((l) => l.date >= from && l.date <= to);
   const grid = el('div', { class: 'week__grid', 'data-testid': 'week-grid' });
   for (const date of dates) {
-    const weekday = weekdayOf(date);
     const lessons = sortLessons(state.lessons.filter((l) => l.date === date));
     const visible = lessons.filter((l) => activeStudents.has(l.studentId));
     const isToday = date === todayIso();
 
     const column = el('section', { class: `day${isToday ? ' day--today' : ''}`, 'data-date': date }, [
       el('header', { class: 'day__head' }, [
-        el('span', { class: 'day__name', text: WEEKDAYS_SHORT[weekday - 1] }),
+        el('span', { class: 'day__name', text: weekdayFullName(weekdayOf(date)) }),
         el('span', { class: 'day__num', text: formatDayShort(date) }),
       ]),
     ]);
@@ -96,9 +95,11 @@ export function renderWeekView(store: AppStore, options: WeekViewOptions): HTMLE
     if (visible.length === 0) {
       column.appendChild(el('p', { class: 'day__empty', text: 'Нет занятий' }));
     } else {
+      const list = el('div', { class: 'day__list' });
       for (const lesson of visible) {
-        column.appendChild(lessonCard(store, lesson, balances.get(lesson.studentId)?.remaining ?? 0, { compact: true }));
+        list.appendChild(lessonCard(store, lesson, balances.get(lesson.studentId)?.remaining ?? 0, { compact: true }));
       }
+      column.appendChild(list);
     }
 
     grid.appendChild(column);

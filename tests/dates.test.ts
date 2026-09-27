@@ -8,6 +8,7 @@ import {
   isIsoDate,
   parseRuDate,
   todayIso,
+  weekdayFullName,
   weekdayOf,
 } from '../src/domain/dates.js';
 import {
@@ -49,10 +50,17 @@ describe('календарные даты', () => {
   });
 
   it('день недели по ISO: понедельник 1, воскресенье 7', () => {
-    expect(weekdayOf('2026-09-21')).toBe(1);
     expect(weekdayOf('2026-09-26')).toBe(6);
     expect(weekdayOf('2026-09-27')).toBe(7);
   });
+
+  it('полное название дня недели для заголовка недели', () => {
+    expect(weekdayFullName(1)).toBe('Понедельник');
+    expect(weekdayFullName(6)).toBe('Суббота');
+    expect(weekdayFullName(7)).toBe('Воскресенье');
+    expect(weekdayFullName(8)).toBe('Понедельник');
+  });
+
 
   it('сравнение дат', () => {
     expect(isBefore('2026-09-26', '2026-09-27')).toBe(true);

@@ -8,8 +8,8 @@ export interface LessonCardOptions {
   /** Пометить занятие как ближайшее ещё не начавшееся (FR-3A.8). */
   next?: boolean;
   /**
-   * Короткая карточка для колонки рабочей недели: время, ученик, статус.
-   * Предмет, заметка и ДЗ остаются в шторке занятия (FR-3.1C).
+   * Короткая строка занятия для недели: время, ученик, предмет, статус.
+   * Заметка и ДЗ остаются в шторке занятия (FR-3.1C).
    */
   compact?: boolean;
 }
@@ -43,7 +43,7 @@ export function lessonCard(
     [
       el('span', { class: 'lesson__time', text: formatInterval(lesson.startTime, lesson.durationMin) }),
       el('strong', { class: 'lesson__student', text: student?.name ?? 'Ученик не найден' }),
-      compact ? null : el('span', { class: 'lesson__subject', text: student?.subject ?? '' }),
+      el('span', { class: 'lesson__subject', text: student?.subject ?? '' }),
       el('span', { class: `lesson__status lesson__status--${lesson.status}`, text: STATUS_LABELS[lesson.status] }),
       options.next ? el('span', { class: 'lesson__next', text: 'следующее' }) : null,
       lesson.isTrial ? el('span', { class: 'lesson__trial-flag', text: 'пробное' }) : null,

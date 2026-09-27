@@ -42,8 +42,6 @@ export function renderDayView(store: AppStore, options: DayViewOptions): HTMLEle
     return view;
   }
 
-  view.appendChild(daySummary(summary.total, summary.planned, summary.done, summary.payableTotal));
-
   if (lessons.length === 0) {
     view.appendChild(
       el('section', { class: 'empty-panel', 'data-testid': 'day-empty' }, [
@@ -51,6 +49,7 @@ export function renderDayView(store: AppStore, options: DayViewOptions): HTMLEle
         button('Создать занятие', () => openNewLessonSheet(store, date), 'primary'),
       ]),
     );
+    view.appendChild(daySummary(summary.total, summary.planned, summary.done, summary.payableTotal));
     return view;
   }
 
@@ -63,6 +62,7 @@ export function renderDayView(store: AppStore, options: DayViewOptions): HTMLEle
     );
   }
   view.appendChild(list);
+  view.appendChild(daySummary(summary.total, summary.planned, summary.done, summary.payableTotal));
   return view;
 }
 

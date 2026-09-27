@@ -355,6 +355,7 @@ body.has-sheet {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 8px;
   padding: 2px 4px 8px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
@@ -362,11 +363,19 @@ body.has-sheet {
 
 .day__name {
   font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .day__num {
   color: var(--muted);
   font-size: 14px;
+  white-space: nowrap;
+}
+
+.day__list {
+  display: grid;
+  gap: 8px;
 }
 
 .day__empty {
@@ -426,7 +435,7 @@ body.has-sheet {
   gap: 8px;
 }
 
-/* компактная карточка в колонке рабочей недели (FR-3.1C) */
+/* компактная строка занятия в неделе (FR-3.1C) */
 .lesson--compact {
   gap: 1px;
   padding: 6px 8px;
@@ -1188,7 +1197,7 @@ body.has-sheet {
   }
 
   .week__grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
   }
 
