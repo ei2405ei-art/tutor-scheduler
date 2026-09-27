@@ -1,4 +1,4 @@
-/** Типы сущностей приложения. Соответствуют `ТЗ_MVP.md` §6. */
+﻿/** Типы сущностей приложения. Соответствуют `ТЗ_MVP.md` §6. */
 
 export type LessonStatus = 'planned' | 'done' | 'cancelled' | 'moved';
 
@@ -90,13 +90,22 @@ export interface Student {
   createdAt: string;
 }
 
-export interface LessonSeries {
-  id: string;
-  studentId: string;
+/** Одно занятие в неделю внутри серии: день, время, длительность (FR-2.4A). */
+export interface SeriesSlot {
   /** 1 = понедельник … 7 = воскресенье. */
   weekday: number;
   startTime: string;
   durationMin: number;
+}
+
+export interface LessonSeries {
+  id: string;
+  studentId: string;
+  /**
+   * Недельный рисунок серии: от одного до семи слотов (FR-2.4A, BR-3A).
+   * Слоты отсортированы по дню недели, дни недели не повторяются.
+   */
+  slots: SeriesSlot[];
   startsOn: IsoDateLike;
   /** Необязательное ограничение конца серии. */
   endsOn?: string;
@@ -152,4 +161,4 @@ export const SERIES_HORIZON_WEEKS = 4;
  * Версия схемы данных. Каноническое объявление живёт в домене, чтобы команды
  * не зависели от слоя хранилища; `src/storage/schema.ts` его переэкспортирует.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;

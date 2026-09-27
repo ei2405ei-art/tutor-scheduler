@@ -1,6 +1,7 @@
-import { AppStore } from '../app/store.js';
+﻿import { AppStore } from '../app/store.js';
 import { computeAllBalances, lessonsOfStudent } from '../domain/balance.js';
-import { formatFullDate, WEEKDAYS_SHORT } from '../domain/dates.js';
+import { formatFullDate } from '../domain/dates.js';
+import { describeSlots } from '../domain/series.js';
 import { formatInterval } from '../domain/time.js';
 import { STATUS_LABELS, TIMEZONE_LABELS } from '../domain/types.js';
 import { button } from './controls.js';
@@ -54,9 +55,7 @@ export function renderStudentsView(store: AppStore): HTMLElement {
         text:
           series.length === 0
             ? 'Расписание не задано'
-            : `Расписание: ${series
-                .map((s) => `${WEEKDAYS_SHORT[s.weekday - 1]} ${formatInterval(s.startTime, s.durationMin)}`)
-                .join(', ')}`,
+            : `Расписание: ${series.map((s) => describeSlots(s.slots)).join('; ')}`,
       }),
       el('div', { class: `balance balance--${tone}` }, [
         el('span', { text: `оплачено ${balance?.paid ?? 0}` }),

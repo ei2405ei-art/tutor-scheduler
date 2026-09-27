@@ -1,4 +1,4 @@
-import { AppStore } from '../app/store.js';
+﻿import { AppStore } from '../app/store.js';
 import {
   addOneOffLesson,
   addPayment,
@@ -16,7 +16,7 @@ import {
   type SeriesInput,
 } from '../domain/commands.js';
 import { computeBalance, lessonsOfStudent } from '../domain/balance.js';
-import { formatFullDate, isAfter, todayIso, weekdayOf, WEEKDAYS_SHORT } from '../domain/dates.js';
+import { formatFullDate, isAfter, todayIso, weekdayOf } from '../domain/dates.js';
 import { formatInterval, isClockTime, isValidDuration } from '../domain/time.js';
 import {
   LESSON_STATUSES,
@@ -30,6 +30,7 @@ import {
   type StudentTimezone,
 } from '../domain/types.js';
 import { moveHistory } from '../domain/commands.js';
+import { describeSlots, lessonsPerWeekText } from '../domain/series.js';
 import {
   button,
   checkboxField,
@@ -42,6 +43,7 @@ import {
   textareaField,
 } from './controls.js';
 import { el } from './dom.js';
+import { createSlotEditor } from './slot-editor.js';
 
 const COLOR_LABELS: Record<StudentColor, string> = {
   blue: 'Синий',
@@ -293,24 +295,7 @@ export function openNewLessonSheet(
       required: true,
     });
 
-    const weekday = selectField(
-      'День недели',
-      'weekday',
-      WEEKDAYS_SHORT.map((label, i) => ({ value: String(i + 1), label })),
-      String(weekdayOf(defaultDate)),
-    );
-    const seriesTime = field({ label: 'Время', name: 'seriesTime', type: 'time', value: '18:00', required: true });
-    const seriesDuration = field({
-      label: 'Длительность, мин',
-      name: 'seriesDuration',
-      type: 'number',
-      value: '60',
-      min: '1',
-      max: '1440',
-      step: '5',
-      inputMode: 'numeric',
-      required: true,
-    });
+    const slotEditor = createSlotEditor([{ weekday: weekdayOf(defaultDate), startTime: '18:00', durationMin: 60 }]);
     const startsOn = field({ label: 'Начало серии', name: 'startsOn', type: 'date', value: defaultDate, required: true });
     const endsOn = field({ label: 'Окончание серии', name: 'endsOn', type: 'date', value: '', hint: 'Необязательно' });
 
@@ -326,9 +311,7 @@ export function openNewLessonSheet(
       ),
     ]);
     const seriesBlock = el('div', { class: 'form__block form__block--hidden' }, [
-      weekday,
-      seriesTime,
-      seriesDuration,
+      slotEditor.node,
       startsOn,
       endsOn,
       el('p', { class: 'hint', text: 'Серия создаёт занятия на 4 недели вперёд. Дни до даты начала не создаются.' }),
@@ -358,9 +341,7 @@ export function openNewLessonSheet(
             ? store.dispatch((ctx, s) =>
                 addSeries(ctx, s, {
                   studentId,
-                  weekday: Number((weekday.querySelector('select') as HTMLSelectElement).value),
-                  startTime: (seriesTime.querySelector('input') as HTMLInputElement).value,
-                  durationMin: Number((seriesDuration.querySelector('input') as HTMLInputElement).value),
+                  slots: slotEditor.slots(),
                   startsOn: (startsOn.querySelector('input') as HTMLInputElement).value,
                   endsOn: (endsOn.querySelector('input') as HTMLInputElement).value || undefined,
                 }),
@@ -537,8 +518,11 @@ export function openStudentCard(store: AppStore, studentId: string): void {
           body.appendChild(
             el('div', { class: 'row' }, [
               el('div', { class: 'row__main' }, [
-                el('strong', { text: `${WEEKDAYS_SHORT[series.weekday - 1]}, ${formatInterval(series.startTime, series.durationMin)}` }),
-                el('span', { class: 'row__sub', text: `с ${series.startsOn} · занятий: ${count}${series.active ? '' : ' · закрыта'}` }),
+                el('strong', { text: describeSlots(series.slots) }),
+                el('span', {
+                  class: 'row__sub',
+                  text: `${lessonsPerWeekText(series.slots)} · с ${series.startsOn} · занятий: ${count}${series.active ? '' : ' · закрыта'}`,
+                }),
               ]),
               series.active
                 ? button('Достроить', () => {

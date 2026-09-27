@@ -718,6 +718,81 @@ body.has-sheet {
   display: none;
 }
 
+/* --------------------------------------------- недельный рисунок серии */
+
+.slots__box {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2, #f6f7f9);
+}
+
+.slots__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.slots {
+  display: grid;
+  gap: 8px;
+}
+
+.slots__row {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto 4.5rem 2.25rem;
+  align-items: center;
+  gap: 6px;
+}
+
+.slots__row select,
+.slots__input {
+  min-width: 0;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  font-size: 15px;
+  font-family: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.slots__unit {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.slots__remove {
+  min-height: 40px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.slots__remove:disabled {
+  opacity: 0.4;
+}
+
+.slots__add {
+  justify-self: start;
+}
+
+.slots__summary {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .field {
   display: grid;
   gap: 4px;
@@ -1055,6 +1130,36 @@ body.has-sheet {
 @media (max-width: 359px) {
   .summary__row {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Слот серии: день и время сохраняются в строку, длительность уходит
+     на вторую, чтобы ничего не обрезалось на 320 px. */
+  .slots__row {
+    grid-template-columns: 4rem minmax(0, 1fr) 2.25rem;
+    grid-template-areas:
+      'day time remove'
+      'day duration remove';
+    row-gap: 4px;
+  }
+
+  .slots__row select {
+    grid-area: day;
+  }
+
+  .slots__input {
+    grid-area: time;
+  }
+
+  .slots__unit {
+    display: none;
+  }
+
+  .slots__input--duration {
+    grid-area: duration;
+  }
+
+  .slots__remove {
+    grid-area: remove;
   }
 }
 

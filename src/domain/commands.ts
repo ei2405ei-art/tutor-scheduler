@@ -1,4 +1,4 @@
-import {
+﻿import {
   canTransition,
   computeBalance,
   findConflict,
@@ -6,9 +6,22 @@ import {
   validatePaymentInput,
   validateStudentInput,
 } from './balance.js';
-import { compareIso, formatDayMonth, isBefore, todayIso, type IsoDate } from './dates.js';
-import { buildSeriesLessons, isSeriesInputValid } from './series.js';
-import { DEFAULT_DURATION_MIN, formatInterval, intervalsOverlap, isClockTime, isValidDuration } from './time.js';
+import {
+  compareIso,
+  formatDayMonth,
+  isBefore,
+  todayIso,
+  weekdayOf,
+  type IsoDate,
+} from './dates.js';
+import {
+  buildSeriesLessons,
+  isSeriesInputValid,
+  lessonsPerWeekText,
+  slotIsTaken,
+  sortSlots,
+} from './series.js';
+import { DEFAULT_DURATION_MIN, formatInterval, isClockTime, isValidDuration } from './time.js';
 import {
   isStudentColor,
   isTimezone,
@@ -19,6 +32,7 @@ import {
   type LessonSeries,
   type LessonStatus,
   type Payment,
+  type SeriesSlot,
   type Student,
   type StudentColor,
   type StudentTimezone,
@@ -199,9 +213,7 @@ export function addOneOffLesson(
 
 export interface SeriesInput {
   studentId: string;
-  weekday: number;
-  startTime: string;
-  durationMin: number;
+  slots: readonly SeriesSlot[];
   startsOn: string;
   endsOn?: string;
 }
@@ -210,19 +222,27 @@ export interface SeriesInput {
  * Объяснение отказа серии: не «занято», а кто и когда занимает слот.
  * Без этого репетитор не понимает, что менять, и считает, что время
  * второму ученику записать нельзя.
+ *
+ * Слотов в серии несколько, поэтому собираются все занятые даты, а не одна.
  */
 function seriesConflictReason(state: AppState, input: SeriesInput, conflicts: IsoDate[]): string {
   if (conflicts.length === 0) return 'В выбранном диапазоне нет подходящих дат.';
-  const first = conflicts[0] as IsoDate;
-  const clash = state.lessons
-    .filter((l) => l.date === first && l.status !== 'cancelled' && l.status !== 'moved')
-    .find((l) => intervalsOverlap(l.startTime, l.durationMin, input.startTime, input.durationMin));
-  const who = clash
-    ? state.students.find((s) => s.id === clash.studentId)?.name ?? 'другой ученик'
-    : 'другое занятие';
-  const time = clash ? formatInterval(clash.startTime, clash.durationMin) : formatInterval(input.startTime, input.durationMin);
-  const tail = conflicts.length > 1 ? ` Занятых дат: ${conflicts.length}.` : '';
-  return `Занято: ${formatDayMonth(first)}, ${time} у ученика ${who}.${tail} Выберите другое время или день недели.`;
+  const parts: string[] = [];
+  for (const date of conflicts.slice(0, 3)) {
+    const slot = input.slots.find((s) => s.weekday === weekdayOf(date));
+    if (!slot) continue;
+    const clash = slotIsTaken(date, slot, state.lessons);
+    const who = clash
+      ? state.students.find((s) => s.id === clash.studentId)?.name ?? 'другой ученик'
+      : 'другое занятие';
+    const time = clash
+      ? formatInterval(clash.startTime, clash.durationMin)
+      : formatInterval(slot.startTime, slot.durationMin);
+    parts.push(`${formatDayMonth(date)}, ${time} у ученика ${who}`);
+  }
+  const rest = conflicts.length - parts.length;
+  const tail = rest > 0 ? ` и ещё ${rest}` : '';
+  return `Занято: ${parts.join('; ')}${tail}. Выберите другое время или день недели.`;
 }
 
 export function addSeries(
@@ -233,15 +253,12 @@ export function addSeries(
 ): CommandResult<{ series: LessonSeries; created: number; conflicts: string[] }> {
   const error = isSeriesInputValid(input);
   if (error) return fail(error, state);
-  if (!isClockTime(input.startTime)) return fail('Укажите время занятия.', state);
   if (!state.students.some((s) => s.id === input.studentId)) return fail('Ученик не найден.', state);
 
   const series: LessonSeries = {
     id: ctx.createId(),
     studentId: input.studentId,
-    weekday: input.weekday,
-    startTime: input.startTime,
-    durationMin: input.durationMin,
+    slots: sortSlots(input.slots).map((slot) => ({ ...slot })),
     startsOn: input.startsOn,
     ...(input.endsOn ? { endsOn: input.endsOn } : {}),
     active: true,
@@ -254,17 +271,16 @@ export function addSeries(
     horizonWeeks,
     seriesId: series.id,
     studentId: input.studentId,
-    startTime: input.startTime,
-    durationMin: input.durationMin,
   });
 
   if (built.lessons.length === 0) {
     return fail(seriesConflictReason(state, input, built.conflicts), state);
   }
 
+  const perWeek = lessonsPerWeekText(series.slots);
   const message = built.conflicts.length
-    ? `Создано занятий: ${built.lessons.length}. Пропущено из-за занятых слотов: ${built.conflicts.length}.`
-    : `Создано занятий: ${built.lessons.length}.`;
+    ? `Создано ${perWeek}, всего ${built.lessons.length}. Пропущено из-за занятых слотов: ${built.conflicts.length}.`
+    : `Создано ${perWeek}, всего ${built.lessons.length}.`;
 
   return ok(
     { ...state, series: [...state.series, series], lessons: [...state.lessons, ...built.lessons] },
@@ -290,8 +306,6 @@ export function buildSeries(
     horizonWeeks,
     seriesId: series.id,
     studentId: series.studentId,
-    startTime: series.startTime,
-    durationMin: series.durationMin,
   });
 
   if (built.lessons.length === 0) {

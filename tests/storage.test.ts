@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RECOVERY_KEY, repairState, SCHEMA_VERSION, STORAGE_KEY, emptyAppState } from '../src/storage/schema.js';
 import { SchedulerStorage, type StorageLike } from '../src/storage/repository.js';
 import { AppStore } from '../src/app/store.js';
-import { addPayment, addStudent, createContext } from '../src/domain/commands.js';
+import { addPayment, addSeries, addStudent, buildSeries, createContext } from '../src/domain/commands.js';
 import type { AppState } from '../src/domain/types.js';
 
 class MemoryStorage implements StorageLike {
@@ -313,7 +313,7 @@ describe('схема хранилища', () => {
   it('ключи и версия стабильны', () => {
     expect(STORAGE_KEY).toBe('tutor-scheduler:state');
     expect(RECOVERY_KEY).toBe('tutor-scheduler:state:recovery');
-    expect(SCHEMA_VERSION).toBe(2);
+    expect(SCHEMA_VERSION).toBe(3);
   });
 
   it('состояние версионировано', () => {
@@ -397,6 +397,154 @@ describe('схема хранилища', () => {
     if (outcome.kind !== 'ok') return;
     expect(outcome.state.students[0]?.timezone).toBe('');
     expect(outcome.state.students[0]?.goal).toBe('');
+  });
+
+  it('данные версии 2 мигрируют: серия получает слот из старых полей (FR-6.3)', () => {
+    const raw = {
+      version: 2,
+      students: [
+        {
+          id: 's1',
+          name: 'Иван',
+          subject: 'Математика',
+          contact: '',
+          rate: 1200,
+          color: 'blue',
+          active: true,
+          createdAt: '2026-09-01T00:00:00.000Z',
+          timezone: '',
+          goal: '',
+        },
+      ],
+      series: [
+        {
+          id: 'ser1',
+          studentId: 's1',
+          weekday: 4,
+          startTime: '18:00',
+          durationMin: 90,
+          startsOn: '2026-09-24',
+          active: true,
+          createdAt: '2026-09-20T00:00:00.000Z',
+        },
+      ],
+      lessons: [],
+      payments: [],
+    };
+
+    const outcome = repairState(raw);
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+    expect(outcome.state.version).toBe(SCHEMA_VERSION);
+    const series = outcome.state.series[0];
+    expect(series?.slots).toEqual([{ weekday: 4, startTime: '18:00', durationMin: 90 }]);
+    // Старое расписание продолжает работать без ручной правки.
+    expect(series?.startsOn).toBe('2026-09-24');
+    expect(series).not.toHaveProperty('weekday');
+    expect(series).not.toHaveProperty('startTime');
+    expect(series).not.toHaveProperty('durationMin');
+  });
+
+  it('после миграции 2 → 3 серия достраивается по слоту (FR-2.6)', () => {
+    const raw = {
+      version: 2,
+      students: [
+        {
+          id: 's1',
+          name: 'Иван',
+          subject: 'Математика',
+          contact: '',
+          rate: 1200,
+          color: 'blue',
+          active: true,
+          createdAt: '2026-09-01T00:00:00.000Z',
+          timezone: '',
+          goal: '',
+        },
+      ],
+      series: [
+        {
+          id: 'ser1',
+          studentId: 's1',
+          weekday: 4,
+          startTime: '18:00',
+          durationMin: 60,
+          startsOn: '2026-09-24',
+          active: true,
+          createdAt: '2026-09-20T00:00:00.000Z',
+        },
+      ],
+      lessons: [
+        {
+          id: 'l1',
+          studentId: 's1',
+          seriesId: 'ser1',
+          date: '2026-09-24',
+          startTime: '18:00',
+          durationMin: 60,
+          status: 'planned',
+          isTrial: false,
+          topicNote: '',
+          homework: '',
+          movedToLessonId: null,
+          movedFromLessonId: null,
+          createdAt: '2026-09-20T00:00:00.000Z',
+          updatedAt: '2026-09-20T00:00:00.000Z',
+        },
+      ],
+      payments: [],
+    };
+
+    const outcome = repairState(raw);
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+
+    const ctx = createContext(new Date(2026, 8, 24, 10, 0));
+    const built = buildSeries(ctx, outcome.state, 'ser1');
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    // Уже созданное 24.09 не дублируется, горизонт достраивается.
+    const dates = built.state.lessons.map((l) => l.date);
+    expect(dates.filter((d) => d === '2026-09-24')).toHaveLength(1);
+    expect(dates).toContain('2026-10-01');
+    expect(dates).toHaveLength(4);
+  });
+
+  it('слоты серии переживают цикл сохранения и загрузки (FR-6.3)', () => {
+    const mem = new MemoryStorage();
+    const storage = new SchedulerStorage(mem);
+    const store = new AppStore(storage);
+    store.setNow(new Date(2026, 8, 21, 12, 0));
+
+    store.dispatch((ctx, state) =>
+      addStudent(ctx, state, {
+        name: 'Анна',
+        subject: 'Английский',
+        contact: '',
+        rate: 1000,
+        color: 'green',
+        goal: '',
+        timezone: '',
+      }),
+    );
+    const studentId = store.getState().students[0]?.id ?? '';
+    store.dispatch((ctx, state) =>
+      addSeries(ctx, state, {
+        studentId,
+        slots: [
+          { weekday: 1, startTime: '18:00', durationMin: 60 },
+          { weekday: 6, startTime: '12:00', durationMin: 90 },
+        ],
+        startsOn: '2026-09-21',
+      }),
+    );
+
+    const reloaded = new AppStore(new SchedulerStorage(mem));
+    expect(reloaded.getState().series[0]?.slots).toEqual([
+      { weekday: 1, startTime: '18:00', durationMin: 60 },
+      { weekday: 6, startTime: '12:00', durationMin: 90 },
+    ]);
+    expect(reloaded.getState().lessons).toHaveLength(8);
   });
 
   it('новые поля переживают цикл сохранения и загрузки', () => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+﻿import { beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { AppStore } from '../src/app/store.js';
@@ -66,6 +66,36 @@ function setInput(scope: ParentNode, name: string, value: string): void {
   input.value = value;
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+interface SlotEdit {
+  weekday: string;
+  startTime: string;
+  durationMin: string;
+}
+
+function slotRows(scope: ParentNode): HTMLElement[] {
+  return Array.from(scope.querySelectorAll<HTMLElement>('[data-slot-row]'));
+}
+
+/** Заполняет слот серии по порядку строк редактора (FR-2.4A). */
+function setSlots(scope: ParentNode, slots: readonly SlotEdit[]): void {
+  const rows = slotRows(scope);
+  if (rows.length < slots.length) throw new Error('В форме меньше слотов, чем задано');
+  slots.forEach((slot, index) => {
+    const row = rows[index];
+    if (!row) throw new Error(`Нет строки слота ${index}`);
+    const day = row.querySelector<HTMLSelectElement>('[data-slot="day"]');
+    const time = row.querySelector<HTMLInputElement>('[data-slot="time"]');
+    const duration = row.querySelector<HTMLInputElement>('[data-slot="duration"]');
+    if (!day || !time || !duration) throw new Error('Слот собран не полностью');
+    day.value = slot.weekday;
+    day.dispatchEvent(new Event('change', { bubbles: true }));
+    time.value = slot.startTime;
+    time.dispatchEvent(new Event('input', { bubbles: true }));
+    duration.value = slot.durationMin;
+    duration.dispatchEvent(new Event('input', { bubbles: true }));
+  });
 }
 
 function sheet(): HTMLElement {
@@ -283,14 +313,105 @@ describe('приёмочный сценарий', () => {
     seriesRadio.checked = true;
     seriesRadio.dispatchEvent(new Event('change', { bubbles: true }));
 
-    setInput(form, 'weekday', '4');
-    setInput(form, 'seriesTime', '18:00');
-    setInput(form, 'seriesDuration', '60');
+    setSlots(form, [{ weekday: '4', startTime: '18:00', durationMin: '60' }]);
     setInput(form, 'startsOn', THURSDAY);
     clickByText(form, 'Создать');
 
     expect(store.getState().series).toHaveLength(1);
     expect(store.getState().lessons).toHaveLength(4);
+  });
+
+  it('шаг 12A: серия создаёт по нескольку занятий в неделю, у каждого дня своё время', () => {
+    // Требование FR-2.4A: одна серия — от 1 до 7 занятий в неделю,
+    // у каждого дня недели своё время и своя длительность.
+    addStudent();
+
+    testId('fab').click();
+    const form = sheet();
+    const seriesRadio = form.querySelector<HTMLInputElement>('#mode-series');
+    if (!seriesRadio) throw new Error('Нет переключателя серии');
+    seriesRadio.checked = true;
+    seriesRadio.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // В форме есть одна строка слота и кнопка добавления.
+    expect(slotRows(form)).toHaveLength(1);
+    const addSlot = form.querySelector<HTMLButtonElement>('[data-slot-add]');
+    if (!addSlot) throw new Error('Нет кнопки добавления слота');
+
+    addSlot.click();
+    addSlot.click();
+    expect(slotRows(form)).toHaveLength(3);
+
+    // Пн 18:00–19:00, Ср 18:00–19:00, Сб 12:00–13:00.
+    setSlots(form, [
+      { weekday: '1', startTime: '18:00', durationMin: '60' },
+      { weekday: '3', startTime: '18:00', durationMin: '60' },
+      { weekday: '6', startTime: '12:00', durationMin: '60' },
+    ]);
+    setInput(form, 'startsOn', THURSDAY);
+    expect(form.textContent).toContain('3 занятия в неделю');
+    clickByText(form, 'Создать');
+
+    const state = store.getState();
+    expect(state.series).toHaveLength(1);
+    expect(state.series[0]?.slots.map((s) => s.weekday)).toEqual([1, 3, 6]);
+    // Три занятия в неделю на четыре недели горизонта = 12 занятий.
+    expect(state.lessons).toHaveLength(12);
+    // На каждый день недели не больше одного занятия (BR-3A).
+    for (const lesson of state.lessons) {
+      const sameDay = state.lessons.filter((l) => l.date === lesson.date);
+      expect(sameDay).toHaveLength(1);
+    }
+    // Первые занятия — с первого дня горизонта, не раньше startsOn.
+    expect(state.lessons.map((l) => l.date).sort()[0]).toBe(THURSDAY.replace('24', '26'));
+    const saturday = state.lessons.find((l) => l.date === '2026-09-26');
+    expect(saturday?.startTime).toBe('12:00');
+    const monday = state.lessons.find((l) => l.date === '2026-09-28');
+    expect(monday?.startTime).toBe('18:00');
+    expect(state.lessons.some((l) => l.date < THURSDAY)).toBe(false);
+
+    // Карточка ученика показывает всё расписание, а не один день.
+    clickByText(root, 'Ученики');
+    const schedule = allTestId('student-schedule')[0]?.textContent ?? '';
+    expect(schedule).toContain('Пн 18:00');
+    expect(schedule).toContain('Ср 18:00');
+    expect(schedule).toContain('Сб 12:00');
+  });
+
+  it('шаг 12Б: день недели в серии нельзя выбрать дважды', () => {
+    addStudent();
+
+    testId('fab').click();
+    const form = sheet();
+    const seriesRadio = form.querySelector<HTMLInputElement>('#mode-series');
+    if (!seriesRadio) throw new Error('Нет переключателя серии');
+    seriesRadio.checked = true;
+    seriesRadio.dispatchEvent(new Event('change', { bubbles: true }));
+
+    form.querySelector<HTMLButtonElement>('[data-slot-add]')?.click();
+    const rows = slotRows(form);
+    setSlots(form, [
+      { weekday: '1', startTime: '18:00', durationMin: '60' },
+      { weekday: '3', startTime: '18:00', durationMin: '60' },
+    ]);
+
+    // Занятый другим слотом день в списке недоступен.
+    expect(rows[1]?.querySelector<HTMLOptionElement>('option[value="1"]')?.disabled).toBe(true);
+    expect(rows[0]?.querySelector<HTMLOptionElement>('option[value="3"]')?.disabled).toBe(true);
+    expect(rows[1]?.querySelector<HTMLOptionElement>('option[value="3"]')?.disabled).toBe(false);
+
+    // Даже если день продублирован, форма обязана отказать, а не создать серию.
+    const firstDay = rows[0]?.querySelector<HTMLSelectElement>('[data-slot="day"]');
+    const secondDay = rows[1]?.querySelector<HTMLSelectElement>('[data-slot="day"]');
+    if (!firstDay || !secondDay) throw new Error('Слот собран не полностью');
+    secondDay.value = '1';
+    secondDay.dispatchEvent(new Event('change', { bubbles: true }));
+
+    setInput(form, 'startsOn', THURSDAY);
+    clickByText(form, 'Создать');
+
+    expect(store.getState().series).toHaveLength(0);
+    expect(form.querySelector<HTMLElement>('.form__error--active')?.textContent).toContain('День недели уже занят');
   });
 
   it('шаг 13: без учеников занятие создать нельзя', () => {
@@ -485,9 +606,7 @@ describe('приёмочный сценарий', () => {
     seriesRadio.checked = true;
     seriesRadio.dispatchEvent(new Event('change', { bubbles: true }));
 
-    setInput(form, 'weekday', '4');
-    setInput(form, 'seriesTime', '18:00');
-    setInput(form, 'seriesDuration', '60');
+    setSlots(form, [{ weekday: '4', startTime: '18:00', durationMin: '60' }]);
     setInput(form, 'startsOn', THURSDAY);
     clickByText(form, 'Создать');
 
@@ -510,9 +629,7 @@ describe('приёмочный сценарий', () => {
       clickByText(sheet(), 'Создать серию');
       const form = sheet();
       expect(form.textContent).toContain('Серия занятий');
-      setInput(form, 'weekday', weekday);
-      setInput(form, 'seriesTime', time);
-      setInput(form, 'seriesDuration', '60');
+      setSlots(form, [{ weekday, startTime: time, durationMin: '60' }]);
       setInput(form, 'startsOn', THURSDAY);
       clickByText(form, 'Создать');
     };
@@ -531,8 +648,8 @@ describe('приёмочный сценарий', () => {
     if (!anna || !petr) throw new Error('Ожидались два ученика');
     expect(state.series.filter((s) => s.studentId === anna.id)).toHaveLength(1);
     expect(state.series.filter((s) => s.studentId === petr.id)).toHaveLength(1);
-    expect(state.series.find((s) => s.studentId === petr.id)?.weekday).toBe(6);
-    expect(state.series.find((s) => s.studentId === petr.id)?.startTime).toBe('10:00');
+    expect(state.series.find((s) => s.studentId === petr.id)?.slots[0]?.weekday).toBe(6);
+    expect(state.series.find((s) => s.studentId === petr.id)?.slots[0]?.startTime).toBe('10:00');
 
     clickByText(root, 'Ученики');
     const schedules = allTestId('student-schedule').map((n) => n.textContent ?? '');
@@ -566,25 +683,21 @@ describe('приёмочный сценарий', () => {
     };
 
     openSeries(0);
-    setInput(sheet(), 'weekday', '4');
-    setInput(sheet(), 'seriesTime', '18:00');
-    setInput(sheet(), 'seriesDuration', '60');
+    setSlots(sheet(), [{ weekday: '4', startTime: '18:00', durationMin: '60' }]);
     setInput(sheet(), 'startsOn', THURSDAY);
     clickByText(sheet(), 'Создать');
     expect(store.getState().series).toHaveLength(1);
 
     openSeries(1);
-    setInput(sheet(), 'weekday', '4');
-    setInput(sheet(), 'seriesTime', '18:00');
-    setInput(sheet(), 'seriesDuration', '60');
+    setSlots(sheet(), [{ weekday: '4', startTime: '18:00', durationMin: '60' }]);
     setInput(sheet(), 'startsOn', THURSDAY);
     clickByText(sheet(), 'Создать');
 
     // Форма осталась открытой, введённые значения на месте, причина понятна.
     const form = sheet();
     expect(form.textContent).toContain('Серия занятий');
-    expect(form.querySelector<HTMLInputElement>('[name="weekday"]')?.value).toBe('4');
-    expect(form.querySelector<HTMLInputElement>('[name="seriesTime"]')?.value).toBe('18:00');
+    expect(slotRows(form)[0]?.querySelector<HTMLSelectElement>('[data-slot="day"]')?.value).toBe('4');
+    expect(slotRows(form)[0]?.querySelector<HTMLInputElement>('[data-slot="time"]')?.value).toBe('18:00');
     const error = form.querySelector<HTMLElement>('.form__error--active');
     expect(error?.textContent).toContain('Занято');
     expect(error?.textContent).toContain('Иван');
@@ -592,10 +705,13 @@ describe('приёмочный сценарий', () => {
     expect(store.getState().series).toHaveLength(1);
 
     // После правки времени та же форма сохраняет серию второму ученику.
-    setInput(form, 'seriesTime', '19:30');
+    const timeField = form.querySelector<HTMLInputElement>('[data-slot="time"]');
+    if (!timeField) throw new Error('Нет поля времени слота');
+    timeField.value = '19:30';
+    timeField.dispatchEvent(new Event('input', { bubbles: true }));
     clickByText(form, 'Создать');
     expect(store.getState().series).toHaveLength(2);
-    expect(store.getState().series[1]?.startTime).toBe('19:30');
+    expect(store.getState().series[1]?.slots[0]?.startTime).toBe('19:30');
   });
 
   it('незаполненная форма ученика не закрывается молча, а объясняет, чего не хватает', () => {

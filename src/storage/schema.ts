@@ -1,4 +1,5 @@
-import { isIsoDate } from '../domain/dates.js';
+﻿import { isIsoDate } from '../domain/dates.js';
+import { sortSlots } from '../domain/series.js';
 import { isClockTime, isValidDuration } from '../domain/time.js';
 import {
   GOAL_MAX_LENGTH,
@@ -10,6 +11,7 @@ import {
   type Lesson,
   type LessonSeries,
   type Payment,
+  type SeriesSlot,
   type Student,
 } from '../domain/types.js';
 
@@ -29,6 +31,10 @@ export const MIGRATIONS: Record<number, (raw: RawRecord) => RawRecord> = {
     students: withStudentDefaults(asArray(raw.students)),
     lessons: withLessonDefaults(asArray(raw.lessons)),
   }),
+  2: (raw) => ({
+    ...raw,
+    series: withSeriesSlots(asArray(raw.series)),
+  }),
 };
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -46,6 +52,28 @@ function withStudentDefaults(items: unknown[]): unknown[] {
 
 function withLessonDefaults(items: unknown[]): unknown[] {
   return items.map((item) => (isObject(item) ? { isTrial: false, ...item } : item));
+}
+
+/**
+ * Шаг 2 → 3: у серии вместо одного `weekday`, `startTime` и `durationMin`
+ * появился массив `slots` — недельный рисунок с собственным временем у каждого
+ * дня (FR-2.4A). Старая серия становится серией из одного слота, поэтому её
+ * занятия и дальнейшая генерация ведут себя как раньше.
+ */
+function withSeriesSlots(items: unknown[]): unknown[] {
+  const legacyKeys = ['weekday', 'startTime', 'durationMin'];
+  return items.map((item) => {
+    if (!isObject(item)) return item;
+    if (Array.isArray(item.slots)) return item;
+    const slot = {
+      weekday: item.weekday,
+      startTime: item.startTime,
+      durationMin: item.durationMin,
+    };
+    const rest: Record<string, unknown> = { ...item };
+    for (const key of legacyKeys) delete rest[key];
+    return { ...rest, slots: [slot] };
+  });
 }
 
 function migrate(version: number, raw: RawRecord): RawRecord {
@@ -90,14 +118,26 @@ function isValidStudent(raw: unknown): raw is Student {
   );
 }
 
+function isValidSlots(raw: unknown): raw is SeriesSlot[] {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 7) return false;
+  const seen = new Set<number>();
+  for (const slot of raw) {
+    if (!isObject(slot)) return false;
+    if (!Number.isInteger(slot.weekday) || (slot.weekday as number) < 1 || (slot.weekday as number) > 7) {
+      return false;
+    }
+    if (seen.has(slot.weekday as number)) return false;
+    seen.add(slot.weekday as number);
+    if (!isClockTime(slot.startTime)) return false;
+    if (!isValidDuration(slot.durationMin)) return false;
+  }
+  return true;
+}
+
 function isValidSeries(raw: unknown): raw is LessonSeries {
   if (!isObject(raw)) return false;
   if (str(raw.id).length === 0) return false;
-  if (!Number.isInteger(raw.weekday) || (raw.weekday as number) < 1 || (raw.weekday as number) > 7) {
-    return false;
-  }
-  if (!isClockTime(raw.startTime)) return false;
-  if (!isValidDuration(raw.durationMin)) return false;
+  if (!isValidSlots(raw.slots)) return false;
   if (!isIsoDate(raw.startsOn)) return false;
   if (raw.endsOn != null && raw.endsOn !== '' && !isIsoDate(raw.endsOn)) return false;
   return true;
@@ -138,9 +178,11 @@ function normalizeSeries(raw: LessonSeries): LessonSeries {
   return {
     id: raw.id,
     studentId: raw.studentId,
-    weekday: raw.weekday,
-    startTime: raw.startTime,
-    durationMin: raw.durationMin,
+    slots: sortSlots(raw.slots).map((slot) => ({
+      weekday: slot.weekday,
+      startTime: slot.startTime,
+      durationMin: slot.durationMin,
+    })),
     startsOn: raw.startsOn,
     ...(raw.endsOn ? { endsOn: raw.endsOn } : {}),
     active: typeof raw.active === 'boolean' ? raw.active : true,

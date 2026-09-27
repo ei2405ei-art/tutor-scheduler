@@ -724,9 +724,7 @@ describe('ученики и серии', () => {
         {
           id: 'ser-1',
           studentId: 's1',
-          weekday: 4,
-          startTime: '18:00',
-          durationMin: 60,
+          slots: [{ weekday: 4, startTime: '18:00', durationMin: 60 }],
           startsOn: '2026-09-24',
           active: true,
           createdAt: '2026-09-20T00:00:00.000Z',
