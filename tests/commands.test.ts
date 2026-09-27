@@ -613,6 +613,23 @@ describe('пробное занятие (BR-16)', () => {
     expect(summarizeWeek(state, '2026-09-23').payableTotal).toBe(day.payableTotal);
   });
 
+  it('занятия закрытого ученика не попадают в итоги дня и недели (BR-14)', () => {
+    const state = withLessons(makeLesson({ id: 'l1', date: '2026-09-24', status: 'planned' }));
+    const closed: AppState = {
+      ...state,
+      students: state.students.map((s) => (s.id === 's1' ? { ...s, active: false } : s)),
+    };
+    expect(summarizeWeek(state, '2026-09-23').total).toBe(1);
+    expect(summarizeDay(closed, '2026-09-24').total).toBe(0);
+    expect(summarizeDay(closed, '2026-09-24').payableTotal).toBe(0);
+    const week = summarizeWeek(closed, '2026-09-23');
+    expect(week.total).toBe(0);
+    expect(week.planned).toBe(0);
+    expect(week.payableTotal).toBe(0);
+    expect(week.remainingPrepaid).toBe(0);
+    expect(week.debtTotal).toBe(0);
+  });
+
   it('ближайшим считается первое ещё не начавшееся запланированное', () => {
     const lessons = sortLessons([
       makeLesson({ id: 'l1', startTime: '09:00', status: 'planned' }),

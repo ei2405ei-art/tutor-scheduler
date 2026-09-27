@@ -11,6 +11,7 @@
   --danger: #b3261e;
   --radius: 12px;
   --tap: 44px;
+  --tabbar-h: calc(var(--tap) + 12px + env(safe-area-inset-bottom, 0px));
   --shadow: 0 1px 3px rgb(22 25 31 / 12%), 0 6px 16px rgb(22 25 31 / 6%);
 }
 
@@ -41,7 +42,7 @@ body.has-sheet {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: var(--tabbar-h);
 }
 
 /* -------------------------------------- заглушка до загрузки скрипта */
@@ -372,6 +373,14 @@ body.has-sheet {
   margin: 4px 2px;
   color: var(--muted);
   font-size: 14px;
+}
+
+/* подсказка под сеткой, когда неделя пустая */
+.week__hint {
+  margin: 12px 2px 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
 }
 
 /* воскресенье — отдельный блок под рабочей неделей (FR-3.1A) */
@@ -1084,7 +1093,7 @@ body.has-sheet {
   bottom: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
   background: var(--surface);

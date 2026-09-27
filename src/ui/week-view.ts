@@ -1,9 +1,10 @@
 import { AppStore } from '../app/store.js';
 import { computeAllBalances } from '../domain/balance.js';
-import { formatDayShort, todayIso, WEEKDAYS_SHORT, weekdayOf } from '../domain/dates.js';
+import { formatDayShort, formatFullDate, todayIso, WEEKDAYS_SHORT, weekdayOf } from '../domain/dates.js';
 import { formatMoney } from '../domain/money.js';
 import { sortLessons } from '../domain/commands.js';
-import { dayOffDate, shiftWeek, startOfWeek, workWeekDates } from '../domain/week.js';
+import type { AppState, Lesson } from '../domain/types.js';
+import { dayOffDate, endOfWeek, shiftWeek, startOfWeek, workWeekDates } from '../domain/week.js';
 import { summarizeWeek } from '../domain/balance.js';
 import { openStudentSheet } from './sheets.js';
 import { lessonCard } from './lesson-card.js';
@@ -75,6 +76,9 @@ export function renderWeekView(store: AppStore, options: WeekViewOptions): HTMLE
   }
 
   /* рабочая неделя: понедельник — суббота */
+  const from = startOfWeek(options.date);
+  const to = endOfWeek(options.date);
+  const inWeek = state.lessons.filter((l) => l.date >= from && l.date <= to);
   const grid = el('div', { class: 'week__grid', 'data-testid': 'week-grid' });
   for (const date of dates) {
     const weekday = weekdayOf(date);
@@ -102,8 +106,42 @@ export function renderWeekView(store: AppStore, options: WeekViewOptions): HTMLE
   view.appendChild(grid);
 
   /* воскресенье — отдельным блоком под рабочей неделей (FR-3.1A) */
-  view.appendChild(dayOffBlock(store, options.date, balances, activeStudents));
+  const dayOff = dayOffBlock(store, options.date, balances, activeStudents);
+  view.appendChild(dayOff);
+
+  if (!inWeek.some((l) => activeStudents.has(l.studentId))) {
+    const hidden = inWeek.some((l) => !activeStudents.has(l.studentId));
+    const next = nextVisibleLesson(state, to, activeStudents);
+    const hint = el('p', { class: 'week__hint', 'data-testid': 'week-hint' }, [
+      el('span', {
+        text: hidden
+          ? 'На этой неделе нет занятий активных учеников. Занятия закрытого ученика в неделю не попадают — откройте «Ученики», чтобы увидеть его историю.'
+          : next
+            ? 'На этой неделе занятий нет. Ближайшее занятие — позже.'
+            : 'На этой неделе занятий нет.',
+      }),
+    ]);
+    if (next) {
+      hint.appendChild(
+        button(`Перейти к занятию ${formatFullDate(next.date)}`, () => options.onDateChange(next.date)),
+      );
+    }
+    view.appendChild(hint);
+  }
   return view;
+}
+
+/** Первое ещё не показанное занятие после конца недели (FR-3.1E). */
+function nextVisibleLesson(
+  state: AppState,
+  after: string,
+  activeStudents: Set<string>,
+): Lesson | null {
+  return (
+    state.lessons
+      .filter((l) => l.date > after && activeStudents.has(l.studentId) && l.status !== 'cancelled')
+      .sort((a, b) => (a.date === b.date ? a.startTime.localeCompare(b.startTime) : a.date < b.date ? -1 : 1))[0] ?? null
+  );
 }
 
 /**

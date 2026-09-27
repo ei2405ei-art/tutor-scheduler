@@ -1,10 +1,12 @@
-﻿import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { AppStore } from '../src/app/store.js';
 import { SchedulerStorage, type StorageLike } from '../src/storage/repository.js';
 import { mountApp } from '../src/ui/app.js';
 import { closeSheet } from '../src/ui/controls.js';
+import { formatMoney } from '../src/domain/money.js';
+import { formatFullDate } from '../src/domain/dates.js';
 
 /* Приёмочный сценарий из ТЗ_MVP.md §11 в jsdom. */
 
@@ -877,6 +879,35 @@ describe('рабочая неделя репетитора Пн–Суб', () =>
     // В сумму к оплате перенесённое не входит: четверг и пятница.
     expect(testId('week-payable').textContent).toContain('2 400 ₽');
   });
+
+  it('пустая неделя объясняет, что занятия закрытого ученика не показываются', () => {
+    addStudent();
+    createLesson(THURSDAY, '18:00', '60');
+
+    clickByText(root, 'Ученики');
+    allTestId('student-card')[0]?.click();
+    clickByText(sheet(), 'Убрать из расписания');
+    closeSheet();
+
+    clickByText(root, 'Неделя');
+    expect(allTestId('lesson-card')).toHaveLength(0);
+    expect(testId('week-hint').textContent).toContain('Занятия закрытого ученика в неделю не попадают');
+    // Итог недели соответствует тому, что показано в сетке.
+    expect(testId('week-payable').textContent).toContain(formatMoney(0));
+  });
+
+  it('пустая неделя без закрытых учеников предлагает перейти к ближайшему занятию', () => {
+    addStudent();
+    createLesson('2026-10-05', '18:00', '60');
+    clickByText(root, 'Неделя');
+
+    expect(testId('week-grid').querySelectorAll('[data-testid="lesson-card"]')).toHaveLength(0);
+    const hint = testId('week-hint');
+    expect(hint.textContent).toContain('Ближайшее занятие');
+    clickByText(hint, `Перейти к занятию ${formatFullDate('2026-10-05')}`);
+
+    expect(testId('week-grid').querySelectorAll('[data-testid="lesson-card"]')).toHaveLength(1);
+  });
 });
 
 describe('состояния интерфейса', () => {
@@ -897,6 +928,38 @@ describe('состояния интерфейса', () => {
 
     expect(blocked.getState().students).toHaveLength(0);
     expect(root.textContent).toContain('Локальное хранилище недоступно');
+  });
+
+  it('нижняя панель вкладок умещается в одну строку и не накрывает содержимое', () => {
+    const tabbar = root.querySelector<HTMLElement>('.tabbar');
+    expect(tabbar).not.toBeNull();
+    const css = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');
+    const columns = css.match(/grid-template-columns:\s*repeat\((\d+),\s*1fr\)/);
+    expect(Number(columns?.[1] ?? 0)).toBeGreaterThanOrEqual(allTestId('tab-day').length + 1);
+    // Резерв под панель берётся из той же переменной, что и её высота.
+    expect(css).toMatch(/\.app\s*\{[^}]*padding-bottom:\s*var\(--tabbar-h\)/);
+  });
+
+  it('карточка ученика показывает ближайшее занятие, а не последнее по дате', () => {
+    addStudent();
+    createLesson('2026-10-05', '18:00', '60');
+    createLesson('2026-10-19', '18:00', '60');
+    clickByText(root, 'Ученики');
+
+    const card = allTestId('student-card')[0];
+    expect(card?.textContent).toContain('Ближайшее занятие');
+    expect(card?.textContent).toContain('5 октября 2026');
+    expect(card?.textContent).not.toContain('19 октября');
+  });
+
+  it('после всех занятий подпись меняется на «Последнее занятие»', () => {
+    addStudent();
+    createLesson('2026-09-10', '18:00', '60');
+    clickByText(root, 'Ученики');
+
+    const card = allTestId('student-card')[0];
+    expect(card?.textContent).toContain('Последнее занятие: 10 сентября 2026');
+    expect(card?.textContent).not.toContain('Ближайшее занятие');
   });
 
   it('повреждённые данные не удаляются молча, а резервный слот используется', () => {

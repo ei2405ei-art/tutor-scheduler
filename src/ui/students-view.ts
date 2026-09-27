@@ -3,7 +3,7 @@ import { computeAllBalances, lessonsOfStudent } from '../domain/balance.js';
 import { formatFullDate } from '../domain/dates.js';
 import { describeSlots } from '../domain/series.js';
 import { formatInterval } from '../domain/time.js';
-import { STATUS_LABELS, TIMEZONE_LABELS } from '../domain/types.js';
+import { STATUS_LABELS, TIMEZONE_LABELS, type Lesson } from '../domain/types.js';
 import { button } from './controls.js';
 import { el } from './dom.js';
 import { openStudentCard, openStudentSheet } from './sheets.js';
@@ -29,8 +29,8 @@ export function renderStudentsView(store: AppStore): HTMLElement {
   for (const student of state.students) {
     const balance = balances.get(student.id);
     const lessons = lessonsOfStudent(state, student.id);
-    const last = lessons.at(-1);
     const series = state.series.filter((s) => s.studentId === student.id && s.active);
+    const next = nextLessonLabel(lessons, store.today());
     const tone = (balance?.remaining ?? 0) < 0 ? 'danger' : (balance?.remaining ?? 0) === 0 ? 'warn' : 'ok';
 
     const card = el('article', { class: `student student--color-${student.color}`, 'data-testid': 'student-card' }, [
@@ -69,10 +69,10 @@ export function renderStudentsView(store: AppStore): HTMLElement {
               : `осталось ${balance?.remaining ?? 0}`,
         }),
       ]),
-      last
+      next
         ? el('p', {
             class: 'student__last',
-            text: `Ближайшее занятие: ${formatFullDate(last.date)}, ${formatInterval(last.startTime, last.durationMin)} · ${STATUS_LABELS[last.status]}`,
+            text: `${next.label}: ${formatFullDate(next.lesson.date)}, ${formatInterval(next.lesson.startTime, next.lesson.durationMin)} · ${STATUS_LABELS[next.lesson.status]}`,
           })
         : el('p', { class: 'student__last', text: 'Занятий пока нет.' }),
     ]);
@@ -94,4 +94,16 @@ export function renderStudentsView(store: AppStore): HTMLElement {
   view.appendChild(list);
   view.appendChild(button('Добавить ученика', () => openStudentSheet(store), 'primary'));
   return view;
+}
+
+/**
+ * Ближайшее занятие ученика, а не последнее по дате (FR-3.1F).
+ * Отменённые и перенесённые занятия ближайшим не считаются.
+ */
+function nextLessonLabel(lessons: Lesson[], today: string): { label: string; lesson: Lesson } | null {
+  const upcoming = lessons.find((l) => l.date >= today && l.status !== 'cancelled' && l.status !== 'moved');
+  if (upcoming) return { label: 'Ближайшее занятие', lesson: upcoming };
+  const past = lessons.filter((l) => l.status !== 'cancelled').at(-1);
+  if (past) return { label: 'Последнее занятие', lesson: past };
+  return null;
 }

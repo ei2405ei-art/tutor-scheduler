@@ -83,8 +83,17 @@ export interface DaySummary {
 }
 
 /** Итог одного дня для дневного вида. Пробные видны в количествах, но не в сумме. */
+/**
+ * Активные ученики. Занятия закрытого ученика не попадают ни в сетку дня,
+ * ни в сетку недели (BR-14), поэтому их не должно быть и в итогах.
+ */
+function activeStudentIds(state: AppState): Set<string> {
+  return new Set(state.students.filter((s) => s.active).map((s) => s.id));
+}
+
 export function summarizeDay(state: AppState, date: IsoDate): DaySummary {
-  const lessons = state.lessons.filter((l) => l.date === date);
+  const active = activeStudentIds(state);
+  const lessons = state.lessons.filter((l) => l.date === date && active.has(l.studentId));
   const summary: DaySummary = {
     date,
     total: lessons.length,
@@ -122,7 +131,10 @@ export function findNextLesson(lessons: Lesson[], clock: ClockTime): Lesson | nu
 export function summarizeWeek(state: AppState, date: IsoDate): WeekSummary {
   const from = startOfWeek(date);
   const to = endOfWeek(date);
-  const inWeek = state.lessons.filter((l) => l.date >= from && l.date <= to);
+  const active = activeStudentIds(state);
+  const inWeek = state.lessons.filter(
+    (l) => l.date >= from && l.date <= to && active.has(l.studentId),
+  );
 
   const summary: WeekSummary = {
     weekStart: from,
