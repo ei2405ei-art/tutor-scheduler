@@ -447,6 +447,7 @@ export function openStudentSheet(store: AppStore, studentId?: string): void {
 /* ------------------------------------------------- карточка ученика (просмотр) */
 
 export function openStudentCard(store: AppStore, studentId: string): void {
+  let showAllLessons = false;
   openSheet({ title: 'Ученик', testId: 'student-card' }, (body, close) => {
     const render = (): void => {
       body.replaceChildren();
@@ -573,25 +574,11 @@ export function openStudentCard(store: AppStore, studentId: string): void {
 
       /* занятия */
       body.appendChild(el('h3', { class: 'sheet__subtitle', text: 'Занятия' }));
-      const lessons = lessonsOfStudent(state, student.id).slice(-12).reverse();
-      if (lessons.length === 0) {
-        body.appendChild(el('p', { class: 'hint', text: 'Занятий пока нет.' }));
-      } else {
-        for (const lesson of lessons) {
-          body.appendChild(
-            el('button', { type: 'button', class: 'row row--link' }, [
-              el('div', { class: 'row__main' }, [
-                el('strong', { text: `${formatFullDate(lesson.date)}, ${formatInterval(lesson.startTime, lesson.durationMin)}` }),
-                el('span', { class: 'row__sub', text: STATUS_LABELS[lesson.status] }),
-              ]),
-            ]),
-          );
-          const last = body.lastElementChild as HTMLElement;
-          last.addEventListener('click', () => {
-            close();
-            openLessonSheet(store, lesson.id);
-          });
-        }
+      for (const node of lessonsBlock(store, student.id, showAllLessons, () => {
+        showAllLessons = true;
+        render();
+      })) {
+        body.appendChild(node);
       }
 
       body.appendChild(button('Закрыть', close));
@@ -599,6 +586,72 @@ export function openStudentCard(store: AppStore, studentId: string): void {
 
     render();
   });
+}
+
+/** Сколько занятий показывать до нажатия «Показать все». */
+const LESSONS_PREVIEW = 5;
+
+/**
+ * Список занятий ученика: сначала ближайшие, затем прошедшие (FR-3.1H).
+ * Раньше показывались двенадцать самых дальних занятий серии, из-за чего
+ * ближайших не было видно, а общее число занятий оставалось неизвестным.
+ */
+function lessonsBlock(
+  store: AppStore,
+  studentId: string,
+  showAll: boolean,
+  onShowAll: () => void,
+): HTMLElement[] {
+  const state = store.getState();
+  const all = lessonsOfStudent(state, studentId);
+  if (all.length === 0) return [el('p', { class: 'hint', text: 'Занятий пока нет.' })];
+
+  const today = store.today();
+  const upcoming = all.filter((l) => l.date >= today && l.status !== 'cancelled' && l.status !== 'moved');
+  const past = all.filter((l) => l.date < today || l.status === 'cancelled' || l.status === 'moved');
+
+  const limit = showAll ? Number.POSITIVE_INFINITY : LESSONS_PREVIEW;
+  const shownUpcoming = upcoming.slice(0, limit);
+  const shownPast = [...past].reverse().slice(0, limit);
+  const shown = shownUpcoming.length + shownPast.length;
+
+  const out: HTMLElement[] = [];
+  if (shownUpcoming.length === 0 && shownPast.length === 0) {
+    out.push(el('p', { class: 'hint', text: 'Занятий пока нет.' }));
+  } else {
+    if (shownUpcoming.length > 0) {
+      out.push(el('p', { class: 'list__caption', text: 'Ближайшие' }));
+      for (const lesson of shownUpcoming) out.push(lessonRow(store, lesson));
+    }
+    if (shownPast.length > 0) {
+      out.push(el('p', { class: 'list__caption', text: 'Прошедшие' }));
+      for (const lesson of shownPast) out.push(lessonRow(store, lesson));
+    }
+  }
+
+  out.push(el('p', { class: 'hint', text: `Всего занятий: ${all.length}` }));
+  if (shown < all.length) {
+    out.push(
+      button(`Показать все (${all.length})`, onShowAll),
+    );
+  }
+  return out;
+}
+
+function lessonRow(store: AppStore, lesson: Lesson): HTMLElement {
+  const row = el('button', { type: 'button', class: 'row row--link', 'data-testid': 'student-lesson' }, [
+    el('div', { class: 'row__main' }, [
+      el('strong', {
+        text: `${formatFullDate(lesson.date)}, ${formatInterval(lesson.startTime, lesson.durationMin)}`,
+      }),
+      el('span', { class: 'row__sub', text: STATUS_LABELS[lesson.status] }),
+    ]),
+  ]);
+  row.addEventListener('click', () => {
+    closeSheet();
+    openLessonSheet(store, lesson.id);
+  });
+  return row;
 }
 
 /* ---------------------------------------------------------------- оплата */

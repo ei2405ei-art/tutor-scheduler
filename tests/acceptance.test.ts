@@ -962,6 +962,37 @@ describe('состояния интерфейса', () => {
     expect(card?.textContent).not.toContain('Ближайшее занятие');
   });
 
+  it('список занятий ученика начинается с ближайших и показывает всех (FR-3.1H)', () => {
+    addStudent();
+    createLesson('2026-09-10', '18:00', '60');
+    for (const date of ['2026-09-28', '2026-10-01', '2026-10-05', '2026-10-08', '2026-10-12', '2026-10-15', '2026-10-19']) {
+      createLesson(date, '18:00', '60');
+    }
+    clickByText(root, 'Ученики');
+    allTestId('student-card')[0]?.click();
+
+    const body = sheet();
+    expect(body.textContent).toContain('Ближайшие');
+    expect(body.textContent).toContain('Прошедшие');
+    expect(body.textContent).toContain('Всего занятий: 8');
+
+    // До «Показать все» видны пять ближайших и прошедшие, дальние не подменяют их.
+    const rows = () =>
+      [...sheet().querySelectorAll<HTMLElement>('[data-testid="student-lesson"]')].map(
+        (r) => r.textContent ?? '',
+      );
+    expect(rows()).toHaveLength(6);
+    expect(rows()[0]).toContain('28 сентября 2026');
+    expect(rows()[4]).toContain('12 октября 2026');
+    expect(rows().at(-1)).toContain('10 сентября 2026');
+    expect(rows().join(' ')).not.toContain('15 октября');
+    expect(rows().join(' ')).not.toContain('19 октября');
+
+    clickByText(sheet(), 'Показать все (8)');
+    expect(rows()).toHaveLength(8);
+    expect(rows().at(-1)).toContain('10 сентября 2026');
+  });
+
   it('повреждённые данные не удаляются молча, а резервный слот используется', () => {
     memory.setItem('tutor-scheduler:state', '{сломанный json');
     const recovered = new AppStore(new SchedulerStorage(memory));

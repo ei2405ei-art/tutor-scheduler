@@ -918,6 +918,15 @@ body.has-sheet {
   color: var(--muted);
 }
 
+.list__caption {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .row {
   display: flex;
   align-items: center;
