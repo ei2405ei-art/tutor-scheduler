@@ -7,6 +7,7 @@ import { mountApp } from '../src/ui/app.js';
 import { closeSheet } from '../src/ui/controls.js';
 import { formatMoney } from '../src/domain/money.js';
 import { formatFullDate } from '../src/domain/dates.js';
+import { STATUS_LABELS } from '../src/domain/types.js';
 
 /* Приёмочный сценарий из ТЗ_MVP.md §11 в jsdom. */
 
@@ -1046,6 +1047,117 @@ describe('состояния интерфейса', () => {
 
     expect(text()).toContain('Данные повреждены');
     expect(memory.getItem('tutor-scheduler:state:recovery')).toBe('{сломанный json');
+  });
+});
+
+describe('пересечения в данных (BR-2A, FR-3.1J)', () => {
+  const SEED_ISO = '2026-09-24T10:00:00.000Z';
+
+  function seededState(): string {
+    return JSON.stringify({
+      version: 3,
+      students: [
+        { id: 's1', name: 'Свелана', subject: 'Английский', contact: '', rate: 1000, color: 'blue', active: true, createdAt: SEED_ISO },
+        { id: 's2', name: 'Анжела', subject: 'Английский', contact: '', rate: 1200, color: 'green', active: true, createdAt: SEED_ISO },
+      ],
+      series: [],
+      lessons: [
+        seededLesson('l1', 's1', '18:00'),
+        seededLesson('l2', 's2', '18:00'),
+      ],
+      payments: [],
+    });
+  }
+
+  function seededLesson(id: string, studentId: string, startTime: string): Record<string, unknown> {
+    return {
+      id,
+      studentId,
+      date: THURSDAY,
+      startTime,
+      durationMin: 60,
+      status: 'planned',
+      isTrial: false,
+      topicNote: '',
+      homework: '',
+      seriesId: null,
+      movedToLessonId: null,
+      movedFromLessonId: null,
+      createdAt: SEED_ISO,
+      updatedAt: SEED_ISO,
+    };
+  }
+
+  /** Пересечение, которого приложение само не создаёт: занятия пришли извне. */
+  function mountWithConflict(): AppStore {
+    memory.setItem('tutor-scheduler:state', seededState());
+    return mount();
+  }
+
+  /** Шторка открыта в body, а не внутри корня приложения. */
+  function sheetRows(id: string): HTMLElement[] {
+    return [...document.querySelectorAll<HTMLElement>(`[data-testid="${id}"]`)];
+  }
+
+  function openConflictList(): void {
+    clickByText(root, 'Показать список');
+  }
+
+  it('баннер о пересечении виден на всех трёх вкладках и данные не меняются', () => {
+    const seeded = mountWithConflict();
+
+    expect(allTestId('conflicts-banner')).toHaveLength(1);
+    expect(text()).toContain('В расписании пересечения');
+    expect(text()).toContain('Занятий на одно время: 1');
+
+    for (const tab of ['Неделя', 'Ученики', 'День']) {
+      clickByText(root, tab);
+      expect(allTestId('conflicts-banner')).toHaveLength(1);
+    }
+    expect(seeded.getState().lessons).toHaveLength(2);
+  });
+
+  it('список пересечений показывает день, время, ученика и статус', () => {
+    mountWithConflict();
+    openConflictList();
+
+    expect(document.querySelector('[data-testid="conflicts-sheet"]')).not.toBeNull();
+    expect(sheetRows('conflict-day')).toHaveLength(1);
+    expect(sheetRows('conflict-day')[0]?.textContent).toContain('24 сентября');
+    expect(sheetRows('conflict-row')).toHaveLength(2);
+    expect(sheetRows('conflict-row')[0]?.textContent).toContain('18:00');
+    expect(sheetRows('conflict-row')[0]?.textContent).toContain('Свелана');
+    expect(sheetRows('conflict-row')[0]?.textContent).toContain(STATUS_LABELS.planned);
+    expect(sheetRows('conflict-row')[1]?.textContent).toContain('Анжела');
+  });
+
+  it('нажатие на занятие в списке открывает его карточку', () => {
+    mountWithConflict();
+    openConflictList();
+    sheetRows('conflict-row')[1]?.click();
+
+    expect(document.querySelector('[data-testid="lesson-sheet"]')).not.toBeNull();
+    expect(sheet().textContent).toContain('Анжела');
+  });
+
+  it('после отмены лишнего занятия баннер исчезает', () => {
+    const seeded = mountWithConflict();
+    openConflictList();
+    sheetRows('conflict-row')[0]?.click();
+    clickByText(sheet(), 'Отменить');
+
+    expect(seeded.getState().lessons).toHaveLength(2);
+    expect(seeded.getState().lessons.some((l) => l.status === 'cancelled')).toBe(true);
+    expect(allTestId('conflicts-banner')).toHaveLength(0);
+    expect(sheetRows('conflict-row')).toHaveLength(0);
+  });
+
+  it('занятия без пересечений баннер не показывают', () => {
+    addStudent('Свелана', 'Английский');
+    createLesson(THURSDAY, '18:00', '60');
+    createLesson(THURSDAY, '19:00', '60');
+
+    expect(allTestId('conflicts-banner')).toHaveLength(0);
   });
 });
 

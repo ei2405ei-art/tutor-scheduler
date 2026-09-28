@@ -1,6 +1,8 @@
 import { AppStore } from '../app/store.js';
+import { findScheduleConflicts } from '../domain/conflicts.js';
 import { todayIso } from '../domain/dates.js';
 import { el } from './dom.js';
+import { conflictBanner } from './conflicts-view.js';
 import { dayNavigation, renderDayView } from './day-view.js';
 import { openNewLessonSheet, openStudentSheet } from './sheets.js';
 import { renderStudentsView } from './students-view.js';
@@ -24,8 +26,9 @@ export function mountApp(root: HTMLElement, store: AppStore, now: Date = new Dat
 
     root.appendChild(renderHeader(ui, store, render));
 
-    const statusBanner = renderStatus(store);
-    if (statusBanner) root.appendChild(statusBanner);
+    for (const bannerNode of renderBanners(store)) {
+      root.appendChild(bannerNode);
+    }
 
     const main = el('main', { class: 'app__main' });
     if (ui.tab === 'day') {
@@ -92,35 +95,53 @@ function renderHeader(ui: UiState, store: AppStore, render: () => void): HTMLEle
   return header;
 }
 
-function renderStatus(store: AppStore): HTMLElement | null {
-  const status = store.getStatus();
-  if (status.kind === 'unavailable') {
-    return banner('warn', 'Локальное хранилище недоступно', `${status.reason} Изменения сохранить нельзя, поэтому действия создания отключены.`);
-  }
-  if (status.kind === 'broken') {
-    return banner(
-      'danger',
-      'Данные повреждены',
-      `${status.reason} Исходный JSON сохранён в резервном слоте «${status.recoveryKey}» и не удалён.`,
-    );
-  }
-  if (status.kind === 'unsupported') {
-    return banner(
-      'danger',
-      'Неизвестная версия данных',
-      `В хранилище версия ${String(status.found)}, а приложение понимает меньшую. Данные оставлены нетронутыми.`,
-    );
+/**
+ * Полосы над содержимым: сначала пересечения в расписании, они требуют решения
+ * репетитора, затем состояние хранилища.
+ */
+function renderBanners(store: AppStore): HTMLElement[] {
+  const banners: HTMLElement[] = [];
+
+  const conflicts = findScheduleConflicts(store.getState());
+  if (conflicts.length > 0) {
+    banners.push(conflictBanner(store, conflicts));
   }
 
-  const issues = store.getRepairIssues();
-  if (issues.length > 0) {
-    return banner(
-      'warn',
-      'Часть записей восстановлена',
-      `Некорректные записи отброшены (${issues.length}). Исходный JSON сохранён в резервном слоте.`,
+  const status = store.getStatus();
+  if (status.kind === 'unavailable') {
+    banners.push(
+      banner('warn', 'Локальное хранилище недоступно', `${status.reason} Изменения сохранить нельзя, поэтому действия создания отключены.`),
     );
+  } else if (status.kind === 'broken') {
+    banners.push(
+      banner(
+        'danger',
+        'Данные повреждены',
+        `${status.reason} Исходный JSON сохранён в резервном слоте «${status.recoveryKey}» и не удалён.`,
+      ),
+    );
+  } else if (status.kind === 'unsupported') {
+    banners.push(
+      banner(
+        'danger',
+        'Неизвестная версия данных',
+        `В хранилище версия ${String(status.found)}, а приложение понимает меньшую. Данные оставлены нетронутыми.`,
+      ),
+    );
+  } else {
+    const issues = store.getRepairIssues();
+    if (issues.length > 0) {
+      banners.push(
+        banner(
+          'warn',
+          'Часть записей восстановлена',
+          `Некорректные записи отброшены (${issues.length}). Исходный JSON сохранён в резервном слоте.`,
+        ),
+      );
+    }
   }
-  return null;
+
+  return banners;
 }
 
 function banner(tone: 'warn' | 'danger', title: string, text: string): HTMLElement {

@@ -215,6 +215,60 @@ body.has-sheet {
   color: #7a1810;
 }
 
+.banner .btn {
+  justify-self: start;
+  margin-top: 6px;
+}
+
+/* ------------------------------------------- пересечения в расписании (BR-2A) */
+
+.conflict-day {
+  margin-bottom: 16px;
+}
+
+.conflict-day__head {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.conflict-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--danger);
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.conflict-row__time {
+  font-variant-numeric: tabular-nums;
+}
+
+.conflict-row__who {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.conflict-row__status {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.conflict-empty {
+  margin: 0;
+  color: var(--muted);
+}
+
 /* ------------------------------------------------------- итог недели */
 
 .summary {
