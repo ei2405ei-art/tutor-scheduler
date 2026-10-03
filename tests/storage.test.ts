@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RECOVERY_KEY, repairState, SCHEMA_VERSION, STORAGE_KEY, emptyAppState } from '../src/storage/schema.js';
 import { SchedulerStorage, type StorageLike } from '../src/storage/repository.js';
+import { parseImport } from '../src/storage/backup.js';
 import { AppStore } from '../src/app/store.js';
 import { addPayment, addSeries, addStudent, buildSeries, createContext } from '../src/domain/commands.js';
 import type { AppState } from '../src/domain/types.js';
@@ -568,6 +569,145 @@ describe('схема хранилища', () => {
     const reloaded = new AppStore(new SchedulerStorage(mem));
     expect(reloaded.getState().students[0]?.goal).toBe('ЕГЭ');
     expect(reloaded.getState().students[0]?.timezone).toBe('Europe/Kaliningrad');
+  });
+});
+
+describe('экспорт и восстановление из файла (FR-6.7, FR-6.8)', () => {
+  function addStudentTo(store: AppStore): void {
+    store.setNow(new Date(2026, 8, 21, 12, 0));
+    store.dispatch((ctx, state) =>
+      addStudent(ctx, state, {
+        name: 'Анна',
+        subject: 'Английский',
+        contact: '',
+        rate: 1000,
+        color: 'green',
+        goal: '',
+        timezone: '',
+      }),
+    );
+  }
+
+  function filledState(): AppState {
+    const store = new AppStore(new SchedulerStorage(new MemoryStorage()));
+    addStudentTo(store);
+    return store.getState();
+  }
+
+  it('экспорт работает всегда и даёт файл с датой в имени', () => {
+    const mem = new MemoryStorage();
+    const store = new AppStore(new SchedulerStorage(mem));
+    store.setNow(new Date(2026, 8, 28, 17, 36));
+
+    const payload = store.exportPayload();
+    expect(payload?.fileName).toBe('tutor-scheduler-2026-09-28-1736.json');
+    expect(parseImport(payload?.json ?? '').ok).toBe(true);
+  });
+
+  it('при сломанном хранилище экспорт отдаёт исходный JSON как есть (FR-6.7)', () => {
+    const mem = new MemoryStorage();
+    mem.setItem(STORAGE_KEY, '{это не json');
+    const store = new AppStore(new SchedulerStorage(mem));
+    store.setNow(new Date(2026, 8, 28, 17, 36));
+
+    expect(store.getStatus().kind).toBe('broken');
+    const payload = store.exportPayload();
+    expect(payload?.json).toBe('{это не json');
+    expect(payload?.fileName).toBe('tutor-scheduler-2026-09-28-1736-raw.json');
+  });
+
+  it('при недоступном хранилище выгружать нечего', () => {
+    const store = new AppStore(new SchedulerStorage(null));
+    expect(store.getStatus().kind).toBe('unavailable');
+    expect(store.exportPayload()).toBeNull();
+  });
+
+  it('восстановление заменяет данные целиком, прежние уходят в резервный слот', () => {
+    const mem = new MemoryStorage();
+    const store = new AppStore(new SchedulerStorage(mem));
+    addStudentTo(store);
+    const before = store.getState();
+    const next = parseImport(
+      JSON.stringify({
+        version: SCHEMA_VERSION,
+        students: [
+          {
+            id: 'other',
+            name: 'Пётр',
+            subject: 'Физика',
+            contact: '',
+            rate: 1500,
+            timezone: '',
+            goal: '',
+            color: 'orange',
+            active: true,
+            createdAt: '2026-09-01T00:00:00.000Z',
+          },
+        ],
+        series: [],
+        lessons: [],
+        payments: [],
+      }),
+    );
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+
+    const result = store.importState(next.state, next.report);
+    expect(result.ok).toBe(true);
+    expect(store.getState().students.map((s) => s.name)).toEqual(['Пётр']);
+
+    const recovery = parseImport(mem.getItem(RECOVERY_KEY) ?? '');
+    expect(recovery.ok).toBe(true);
+    if (!recovery.ok) return;
+    expect(recovery.state.students.map((s) => s.id)).toEqual(before.students.map((s) => s.id));
+    expect(store.hasRecovery()).toBe(true);
+    expect(store.recoveryPayload()?.json).toBe(mem.getItem(RECOVERY_KEY));
+  });
+
+  it('восстановление чинит сломанные данные и приложение продолжает работать', () => {
+    const mem = new MemoryStorage();
+    mem.setItem(STORAGE_KEY, '{это не json');
+    const store = new AppStore(new SchedulerStorage(mem));
+    expect(store.canWrite()).toBe(false);
+
+    const next = parseImport(JSON.stringify({ ...filledState(), version: SCHEMA_VERSION }));
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+
+    expect(store.importState(next.state, next.report).ok).toBe(true);
+    expect(store.getStatus().kind).toBe('ready');
+    expect(store.canWrite()).toBe(true);
+    expect(store.getState().students).toHaveLength(1);
+    // Исходный повреждённый JSON не перетирается пустым состоянием (FR-6.4).
+    expect(mem.getItem(RECOVERY_KEY)).toBe('{это не json');
+  });
+
+  it('ошибка записи при восстановлении оставляет прежние данные', () => {
+    const mem = new MemoryStorage();
+    const store = new AppStore(new SchedulerStorage(mem));
+    addStudentTo(store);
+    const before = store.getState();
+    mem.failOnWrite = true;
+
+    const next = parseImport(JSON.stringify({ ...emptyAppState(), version: SCHEMA_VERSION }));
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+
+    expect(store.importState(next.state, next.report).ok).toBe(false);
+    expect(store.getState().students.map((s) => s.name)).toEqual(before.students.map((s) => s.name));
+    expect(store.getToast()?.kind).toBe('error');
+  });
+
+  it('пустое хранилище не занимает резервный слот', () => {
+    const mem = new MemoryStorage();
+    const store = new AppStore(new SchedulerStorage(mem));
+    const next = parseImport(JSON.stringify({ ...filledState(), version: SCHEMA_VERSION }));
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+
+    store.importState(next.state, next.report);
+    expect(mem.getItem(RECOVERY_KEY)).toBeNull();
+    expect(store.hasRecovery()).toBe(false);
   });
 });
 

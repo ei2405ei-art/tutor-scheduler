@@ -47,6 +47,25 @@ export class SchedulerStorage {
     }
   }
 
+  /**
+   * Действующий JSON сохраняется как резервная копия перед заменой из файла (FR-6.8).
+   * Пустое хранилище резервировать нечего, поэтому слот не трогается.
+   */
+  keepAsRecovery(): void {
+    const raw = this.readRaw();
+    if (raw !== null && raw.length > 0) this.backup(raw);
+  }
+
+  /** Текущий JSON хранилища как есть: для экспорта и для резервирования. */
+  readRaw(): string | null {
+    if (!this.storage) return null;
+    try {
+      return this.storage.getItem(STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  }
+
   load(): LoadOutcome {
     if (!this.storage) {
       return { kind: 'unavailable', reason: 'Локальное хранилище недоступно в этом браузере.' };

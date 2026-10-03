@@ -3,6 +3,7 @@ import { findScheduleConflicts } from '../domain/conflicts.js';
 import { todayIso } from '../domain/dates.js';
 import { el } from './dom.js';
 import { conflictBanner } from './conflicts-view.js';
+import { dataExportButton } from './data-sheet.js';
 import { dayNavigation, renderDayView } from './day-view.js';
 import { openNewLessonSheet, openStudentSheet } from './sheets.js';
 import { renderStudentsView } from './students-view.js';
@@ -118,6 +119,7 @@ function renderBanners(store: AppStore): HTMLElement[] {
         'danger',
         'Данные повреждены',
         `${status.reason} Исходный JSON сохранён в резервном слоте «${status.recoveryKey}» и не удалён.`,
+        dataExportButton(store),
       ),
     );
   } else if (status.kind === 'unsupported') {
@@ -126,6 +128,7 @@ function renderBanners(store: AppStore): HTMLElement[] {
         'danger',
         'Неизвестная версия данных',
         `В хранилище версия ${String(status.found)}, а приложение понимает меньшую. Данные оставлены нетронутыми.`,
+        dataExportButton(store),
       ),
     );
   } else {
@@ -136,6 +139,7 @@ function renderBanners(store: AppStore): HTMLElement[] {
           'warn',
           'Часть записей восстановлена',
           `Некорректные записи отброшены (${issues.length}). Исходный JSON сохранён в резервном слоте.`,
+          dataExportButton(store),
         ),
       );
     }
@@ -144,11 +148,10 @@ function renderBanners(store: AppStore): HTMLElement[] {
   return banners;
 }
 
-function banner(tone: 'warn' | 'danger', title: string, text: string): HTMLElement {
-  return el('section', { class: `banner banner--${tone}`, role: 'alert' }, [
-    el('strong', { text: title }),
-    el('span', { text }),
-  ]);
+function banner(tone: 'warn' | 'danger', title: string, text: string, action?: HTMLElement): HTMLElement {
+  const children: HTMLElement[] = [el('strong', { text: title }), el('span', { text })];
+  if (action) children.push(action);
+  return el('section', { class: `banner banner--${tone}`, role: 'alert' }, children);
 }
 
 function renderTabbar(ui: UiState, render: () => void): HTMLElement {

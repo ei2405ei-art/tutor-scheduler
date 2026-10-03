@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { AppStore } from '../src/app/store.js';
@@ -1232,6 +1232,200 @@ function setTrial(scope: ParentNode, checked: boolean): void {
   box.checked = checked;
   box.dispatchEvent(new Event('change', { bubbles: true }));
 }
+
+/* ------------------------------------------------- резервная копия данных */
+
+describe('экспорт и восстановление данных (FR-6.7, FR-6.8)', () => {
+  let created: Blob[] = [];
+  let clickedNames: string[] = [];
+
+  beforeEach(() => {
+    created = [];
+    clickedNames = [];
+    URL.createObjectURL = ((blob: Blob) => {
+      created.push(blob);
+      return 'blob:mock';
+    }) as typeof URL.createObjectURL;
+    URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL;
+    // Клик по ссылке в jsdom означал бы попытку перехода, поэтому он только запоминается.
+    HTMLAnchorElement.prototype.click = function remember(this: HTMLAnchorElement): void {
+      clickedNames.push(this.download);
+    };
+  });
+
+  afterEach(() => {
+    closeSheet();
+  });
+
+  function openStudents(): void {
+    clickByText(root, 'Ученики');
+  }
+
+  function flush(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  /** Чтение Blob: в jsdom нет `Blob.text()`, как и в части мобильных браузеров. */
+  function readBlob(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ''));
+      reader.onerror = () => reject(new Error('Не удалось прочитать Blob'));
+      reader.readAsText(blob);
+    });
+  }
+
+  async function chooseFile(input: HTMLInputElement, content: string, name = 'copy.json'): Promise<void> {
+    Object.defineProperty(input, 'files', { value: [new File([content], name, { type: 'application/json' })], configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    await flush();
+  }
+
+  function restoreInput(): HTMLInputElement {
+    const input = sheet().querySelector<HTMLInputElement>('[data-testid="data-import-input"]');
+    if (!input) throw new Error('В шторке восстановления нет выбора файла');
+    return input;
+  }
+
+  it('кнопки данных есть на вкладке «Ученики» и при пустом списке', () => {
+    openStudents();
+    expect(allTestId('data-block')).toHaveLength(1);
+    expect(allTestId('data-export')).toHaveLength(1);
+    expect(allTestId('data-restore')).toHaveLength(1);
+    expect(text()).toContain('Учеников пока нет');
+    expect(testId('data-export').hasAttribute('disabled')).toBe(false);
+  });
+
+  it('экспорт создаёт файл с датой в имени и сообщает об этом', async () => {
+    addStudent('Иван', 'Математика');
+    openStudents();
+    testId('data-export').click();
+
+    expect(clickedNames).toHaveLength(1);
+    expect(clickedNames[0]).toBe('tutor-scheduler-2026-09-24-1000.json');
+    const json = JSON.parse(await readBlob(created[0] as Blob)) as { students: { name: string }[] };
+    expect(json.students[0]?.name).toBe('Иван');
+    expect(allTestId('toast')[0]?.textContent).toContain('сохранён');
+  });
+
+  it('при сломанном хранилище баннер предлагает выгрузить исходный JSON', async () => {
+    const broken = new MemoryStorage();
+    broken.setItem('tutor-scheduler:state', '{это не json');
+    store = mount(broken);
+
+    expect(text()).toContain('Данные повреждены');
+    testId('banner-export').click();
+    expect(clickedNames).toHaveLength(1);
+    expect(await readBlob(created[0] as Blob)).toBe('{это не json');
+  });
+
+  it('восстановление показывает состав файла и по отмене ничего не меняет', async () => {
+    addStudent('Иван', 'Математика');
+    openStudents();
+    testId('data-restore').click();
+    expect(document.querySelector('.sheet__panel')).not.toBeNull();
+
+    const input = restoreInput();
+    expect(input.accept).toContain('json');
+    await chooseFile(
+      input,
+      JSON.stringify({
+        version: 3,
+        students: [
+          { id: 'p1', name: 'Пётр', subject: 'Физика', contact: '', rate: 1500, timezone: '', goal: '', color: 'orange', active: true, createdAt: '2026-09-01T00:00:00.000Z' },
+        ],
+        series: [],
+        lessons: [],
+        payments: [],
+      }),
+    );
+
+    const preview = sheet().querySelector<HTMLElement>('[data-testid="import-preview"]');
+    expect(preview?.textContent).toContain('учеников: 1');
+    expect(preview?.textContent).toContain('прежние данные останутся');
+    expect(sheet().querySelector('[data-testid="data-import-confirm"]')).not.toBeNull();
+    // До подтверждения текущие данные на месте.
+    expect(store.getState().students.map((s) => s.name)).toEqual(['Иван']);
+
+    closeSheet();
+    expect(store.getState().students.map((s) => s.name)).toEqual(['Иван']);
+    expect(allTestId('student-card')).toHaveLength(1);
+  });
+
+  it('подтверждение заменяет данные, прежние остаются в резервной копии', async () => {
+    addStudent('Иван', 'Математика');
+    openStudents();
+    testId('data-restore').click();
+    await chooseFile(
+      restoreInput(),
+      JSON.stringify({
+        version: 3,
+        students: [
+          { id: 'p1', name: 'Пётр', subject: 'Физика', contact: '', rate: 1500, timezone: '', goal: '', color: 'orange', active: true, createdAt: '2026-09-01T00:00:00.000Z' },
+          { id: 'p2', name: 'Анна', subject: 'Английский', contact: '', rate: 1000, timezone: '', goal: '', color: 'green', active: true, createdAt: '2026-09-01T00:00:00.000Z' },
+        ],
+        series: [],
+        lessons: [],
+        payments: [],
+      }),
+    );
+    clickByText(sheet(), 'Заменить данные');
+
+    expect(document.querySelector('.sheet__panel')).toBeNull();
+    expect(store.getState().students.map((s) => s.name)).toEqual(['Пётр', 'Анна']);
+    expect(allTestId('student-card')).toHaveLength(2);
+    expect(allTestId('data-export-recovery')).toHaveLength(1);
+    expect(allTestId('toast')[0]?.textContent).toContain('восстановлены');
+  });
+
+  it('битый файл объясняет проблему и оставляет данные', async () => {
+    addStudent('Иван', 'Математика');
+    openStudents();
+    testId('data-restore').click();
+    await chooseFile(restoreInput(), '{это не json', 'broken.json');
+
+    expect(sheet().querySelector('.form__error--active')?.textContent).toContain('не является JSON');
+    expect(sheet().querySelector('[data-testid="data-import-confirm"]')).toBeNull();
+    expect(store.getState().students.map((s) => s.name)).toEqual(['Иван']);
+  });
+
+  it('файл из более новой версии отклоняется', async () => {
+    addStudent('Иван', 'Математика');
+    openStudents();
+    testId('data-restore').click();
+    await chooseFile(restoreInput(), JSON.stringify({ version: 99, students: [], series: [], lessons: [], payments: [] }));
+
+    expect(sheet().querySelector('.form__error--active')?.textContent).toContain('более новой версией');
+    expect(store.getState().students.map((s) => s.name)).toEqual(['Иван']);
+  });
+
+  it('восстановление чинит сломанные данные и приложение оживает', async () => {
+    const broken = new MemoryStorage();
+    broken.setItem('tutor-scheduler:state', '{это не json');
+    store = mount(broken);
+
+    clickByText(root, 'Ученики');
+    testId('data-restore').click();
+    await chooseFile(
+      restoreInput(),
+      JSON.stringify({
+        version: 3,
+        students: [
+          { id: 'p1', name: 'Пётр', subject: 'Физика', contact: '', rate: 1500, timezone: '', goal: '', color: 'orange', active: true, createdAt: '2026-09-01T00:00:00.000Z' },
+        ],
+        series: [],
+        lessons: [],
+        payments: [],
+      }),
+    );
+    clickByText(sheet(), 'Заменить данные');
+
+    expect(text()).not.toContain('Данные повреждены');
+    expect(store.getState().students.map((s) => s.name)).toEqual(['Пётр']);
+    expect(allTestId('student-card')).toHaveLength(1);
+  });
+});
 
 /* ------------------------------------------------------------- помощники */
 

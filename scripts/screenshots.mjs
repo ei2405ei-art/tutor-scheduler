@@ -21,6 +21,7 @@
 // прогоняется на реальном приложении, как и в приёмочном сценарии.
 
 import { mkdirSync } from 'node:fs';
+import { Buffer } from 'node:buffer';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -178,6 +179,26 @@ async function shot(page, name) {
   await page.locator('[data-testid="conflicts-open"]').click();
   await page.waitForSelector('[data-testid="conflicts-sheet"]');
   await shot(page, '09-conflicts.png');
+  await context.close();
+}
+
+/* 10–11. Резервная копия: блок «Данные» на «Учениках» и предпросмотр файла */
+{
+  const { context, page } = await open({ width: 390, height: 844 });
+  await openTab(page, 'tab-students', '[data-testid="student-card"]');
+  await page.locator('[data-testid="data-block"]').scrollIntoViewIfNeeded();
+  await shot(page, '10-data-backup.png');
+
+  // Файл подставляется без записи на диск: те же данные, что лежат в хранилище.
+  await page.locator('[data-testid="data-restore"]').click();
+  await page.waitForSelector('[data-testid="data-import-input"]');
+  await page.locator('[data-testid="data-import-input"]').setInputFiles({
+    name: 'tutor-scheduler-2026-09-01-0900.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(demoState(), null, 2), 'utf8'),
+  });
+  await page.waitForSelector('[data-testid="data-import-confirm"]');
+  await shot(page, '11-restore-preview.png');
   await context.close();
 }
 

@@ -15,6 +15,9 @@ export interface ElProps {
   id?: string;
   name?: string;
   href?: string;
+  accept?: string;
+  multiple?: boolean;
+  download?: string;
   disabled?: boolean;
   checked?: boolean;
   selected?: boolean;

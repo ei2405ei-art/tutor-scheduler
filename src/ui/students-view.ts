@@ -5,6 +5,7 @@ import { describeSlots } from '../domain/series.js';
 import { formatInterval } from '../domain/time.js';
 import { STATUS_LABELS, TIMEZONE_LABELS, type Lesson } from '../domain/types.js';
 import { button } from './controls.js';
+import { renderDataBlock } from './data-sheet.js';
 import { el } from './dom.js';
 import { openStudentCard, openStudentSheet } from './sheets.js';
 
@@ -21,6 +22,7 @@ export function renderStudentsView(store: AppStore): HTMLElement {
         button('Добавить ученика', () => openStudentSheet(store), 'primary'),
       ]),
     );
+    view.appendChild(renderDataBlock(store));
     return view;
   }
 
@@ -93,6 +95,7 @@ export function renderStudentsView(store: AppStore): HTMLElement {
 
   view.appendChild(list);
   view.appendChild(button('Добавить ученика', () => openStudentSheet(store), 'primary'));
+  view.appendChild(renderDataBlock(store));
   return view;
 }
 
